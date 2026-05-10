@@ -56,12 +56,22 @@ HUNYUAN_CREATE_PATH=/send
 HUNYUAN_STATUS_PATH=/status
 ```
 
-The app supports three provider modes in Settings:
+The 3D generation backend supports these provider paths:
 
 ```text
 Tripo   Cloud generation only (default)
 Auto    Tripo first, Hunyuan backup
 Hunyuan Local Hunyuan3D generation only
+```
+
+The upload panel exposes the full generation mode choice before picking a file:
+
+```text
+Tripo       Cloud GLB generation
+Hunyuan     Local Hunyuan3D GLB generation
+Cinematic   Layered 2.5D visual from the image
+Auto        Tripo, then Hunyuan, then Cinematic fallback
+Local GLB   Import an existing .glb or self-contained .gltf
 ```
 
 Tripo uploads use the current STS object-storage flow (`/upload/sts/token`) before creating an `image_to_model` task.

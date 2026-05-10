@@ -197,11 +197,12 @@ const CELL_PROFILES = {
 }
 
 const SETTINGS_STORAGE_KEY = 'bio-demo-settings'
-const SETTINGS_STORAGE_VERSION = 2
+const SETTINGS_STORAGE_VERSION = 3
 const DEFAULT_SETTINGS = {
   quality: 'balanced',
   compactUi: false,
   generationProvider: 'tripo',
+  generationMode: 'tripo',
   settingsVersion: SETTINGS_STORAGE_VERSION,
 }
 
@@ -215,6 +216,14 @@ const GENERATION_PROVIDER_OPTIONS = [
   { id: 'hunyuan', label: 'Hunyuan', description: 'Local Hunyuan3D server.' },
 ]
 const GENERATION_PROVIDER_IDS = new Set(GENERATION_PROVIDER_OPTIONS.map((provider) => provider.id))
+const GENERATION_MODE_OPTIONS = [
+  { id: 'tripo', label: 'Tripo', description: 'Cloud GLB generation.' },
+  { id: 'hunyuan', label: 'Hunyuan', description: 'Local Hunyuan3D GLB generation.' },
+  { id: 'cinematic', label: 'Cinematic', description: 'Layered 2.5D visual from the image.' },
+  { id: 'auto', label: 'Auto', description: 'Tripo, then Hunyuan, then Cinematic fallback.' },
+  { id: 'local', label: 'Local GLB', description: 'Import an existing GLB or GLTF file.' },
+]
+const GENERATION_MODE_IDS = new Set(GENERATION_MODE_OPTIONS.map((mode) => mode.id))
 
 function apiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path
@@ -350,12 +359,17 @@ function getCellProfile(cellId, customCells = getStoredCustomCells()) {
   if (customCell) {
     const baseProfile = CELL_PROFILES[customCell.template] ?? CELL_PROFILES.animal
     const hasGeneratedModel = Boolean(customCell.generation?.modelUrl)
+    const isCinematic = customCell.generation?.provider === 'cinematic'
     return {
       ...baseProfile,
-      summary: hasGeneratedModel
+      summary: isCinematic
+        ? `Cinematic layered visual from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
+        : hasGeneratedModel
         ? `AI-generated GLB from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
         : `Uploaded image queued for image-to-3D generation; fallback scaffold is ${getCell(customCell.template).name}.`,
-      comparison: hasGeneratedModel
+      comparison: isCinematic
+        ? 'This custom sample uses layered image parallax for visual depth, not a real exported mesh.'
+        : hasGeneratedModel
         ? 'This custom sample is loaded as a real generated GLB in the WebGL viewer.'
         : `This custom sample will use the ${getCell(customCell.template).name} fallback while generation is running.`,
       occurs: 'Uploaded by user as a custom microscope reference.',
@@ -403,13 +417,19 @@ function storeValue(key, value) {
 function normalizeSettings(value) {
   const stored = value && typeof value === 'object' ? value : {}
   const next = { ...DEFAULT_SETTINGS, ...stored }
+  const storedMode = stored.generationMode || stored.generationProvider
 
   if (stored.settingsVersion !== SETTINGS_STORAGE_VERSION) {
-    next.generationProvider = DEFAULT_SETTINGS.generationProvider
+    next.generationProvider = GENERATION_PROVIDER_IDS.has(stored.generationProvider) ? stored.generationProvider : DEFAULT_SETTINGS.generationProvider
+    next.generationMode = GENERATION_MODE_IDS.has(storedMode) ? storedMode : DEFAULT_SETTINGS.generationMode
   }
 
   if (!GENERATION_PROVIDER_IDS.has(next.generationProvider)) {
     next.generationProvider = DEFAULT_SETTINGS.generationProvider
+  }
+
+  if (!GENERATION_MODE_IDS.has(next.generationMode)) {
+    next.generationMode = DEFAULT_SETTINGS.generationMode
   }
 
   next.settingsVersion = SETTINGS_STORAGE_VERSION
@@ -440,11 +460,12 @@ async function readApiResponse(response) {
 }
 
 function getProviderPlan(provider) {
-  return provider === 'auto' ? ['tripo', 'hunyuan'] : [provider || 'tripo']
+  return provider === 'auto' ? ['tripo', 'hunyuan', 'cinematic'] : [provider || 'tripo']
 }
 
 function getProviderLabel(provider) {
   if (provider === 'local') return 'Local'
+  if (provider === 'cinematic') return 'Cinematic'
   return GENERATION_PROVIDER_OPTIONS.find((item) => item.id === provider)?.label ?? 'Tripo'
 }
 
@@ -1388,6 +1409,68 @@ function GeneratedGlbModel({ modelUrl, proofMode, onSelect }) {
   )
 }
 
+function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle }) {
+  const [pointer, setPointer] = useState({ x: 0, y: 0 })
+  const particles = useMemo(() => (
+    Array.from({ length: 20 }, (_, index) => ({
+      id: index,
+      x: 12 + seeded(index + 300) * 76,
+      y: 10 + seeded(index + 360) * 78,
+      size: 3 + seeded(index + 420) * 8,
+      depth: index % 4,
+    }))
+  ), [])
+
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
+    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2
+    setPointer({
+      x: Math.max(-1, Math.min(1, x)),
+      y: Math.max(-1, Math.min(1, y)),
+    })
+  }
+
+  return (
+    <div
+      className="cinematic-layer-scene"
+      style={{ '--px': pointer.x.toFixed(3), '--py': pointer.y.toFixed(3) }}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={() => setPointer({ x: 0, y: 0 })}
+      onClick={() => onSelectOrganelle('membrane')}
+    >
+      <div className="cinematic-depth-field">
+        {particles.map((particle) => (
+          <span
+            key={particle.id}
+            className={`depth-particle depth-${particle.depth}`}
+            style={{
+              left: `${particle.x}%`,
+              top: `${particle.y}%`,
+              width: `${particle.size}px`,
+              height: `${particle.size}px`,
+            }}
+          />
+        ))}
+      </div>
+      <div className="cinematic-specimen" aria-label="Cinematic layered image visual">
+        <img className="cinematic-shadow-layer" src={imageUrl} alt="" />
+        <img className="cinematic-back-layer" src={imageUrl} alt="" />
+        <img className="cinematic-core-layer" src={imageUrl} alt="" />
+        <img className="cinematic-front-layer" src={imageUrl} alt="" />
+        <span className="cinematic-highlight" />
+      </div>
+      <button type="button" className="cinematic-hotspot" style={{ '--label-color': ORGANELLES[selectedOrganelle]?.accent || '#72a4bf' }} onClick={(event) => {
+        event.stopPropagation()
+        onSelectOrganelle(selectedOrganelle)
+      }}>
+        <span />
+        {ORGANELLES[selectedOrganelle]?.title || 'Layer'}
+      </button>
+    </div>
+  )
+}
+
 function CellScene({ selectedCell, modelCellId, referenceImageUrl, generatedModelUrl, selectedOrganelle, crossSection, autoRotate, hideOthers, proofMode, renderQuality, onSelectOrganelle, onExporterReady = null }) {
   const isPlant = modelCellId === 'plant'
   const exportRoot = useRef(null)
@@ -1628,10 +1711,19 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
   const generation = cell.custom ? cell.generation : null
   const generationProviderLabel = getProviderLabel(generation?.provider)
   const generationFailureTitle = generation?.requestedProvider === 'auto' ? '3D generation failed' : `${generationProviderLabel} generation failed`
+  const isCinematicCell = cell.custom && generation?.provider === 'cinematic'
   const detail = getOrganelleDetail(selectedCell, selectedOrganelle)
   const webglAvailable = canUseWebGL()
   const generationPending = cell.custom && !generatedModelUrl && generation?.status && !['failed', 'local'].includes(generation.status)
   const generationFailed = cell.custom && !generatedModelUrl && generation?.status === 'failed'
+  const stageStatusText = isCinematicCell
+    ? `Cinematic layer visual · Mouse parallax · ${viewMode}`
+    : `${generatedModelUrl ? `${generationProviderLabel} GLB loaded` : generationFailed ? `${generationProviderLabel} failed; source image shown` : referenceImageUrl ? `${generationProviderLabel} ${generation?.status || 'pending'}` : webglAvailable ? 'WebGL live 3D' : 'Fallback image'} · ${autoRotate || proofMode ? 'Auto rotate' : 'Manual orbit'} · ${viewMode}`
+  const referenceLabel = isCinematicCell
+    ? 'Source image used for Cinematic Layer visual'
+    : generatedModelUrl
+    ? `Source image used for ${generationProviderLabel} 3D generation`
+    : `Source image for ${generationProviderLabel} generation`
 
   function handleRotate() {
     const next = !autoRotate
@@ -1689,30 +1781,36 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
         </div>
       </div>
       <ViewerControls crossSection={crossSection} setCrossSection={setCrossSection} viewMode={viewMode} setViewMode={setViewMode} />
-      <div className={`cell-viewer ${viewMode} ${isIsolated ? 'is-isolated' : ''}`}>
-        <CellFallback selectedCell={selectedCell} modelCellId={modelCellId} referenceImageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
-        {!generationFailed && (
-          <CellScene
-            key={`${selectedCell}-${resetNonce}`}
-            selectedCell={selectedCell}
-            modelCellId={modelCellId}
-            referenceImageUrl={referenceImageUrl}
-            generatedModelUrl={generatedModelUrl}
-            selectedOrganelle={selectedOrganelle}
-            crossSection={crossSection}
-            autoRotate={autoRotate}
-            hideOthers={hideOthers}
-            proofMode={proofMode}
-            renderQuality={renderQuality}
-            onSelectOrganelle={setSelectedOrganelle}
-            onExporterReady={onExporterReady}
-          />
+      <div className={`cell-viewer ${viewMode} ${isIsolated ? 'is-isolated' : ''} ${isCinematicCell ? 'cinematic-viewer' : ''}`}>
+        {isCinematicCell ? (
+          <CinematicLayerVisual imageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
+        ) : (
+          <>
+            <CellFallback selectedCell={selectedCell} modelCellId={modelCellId} referenceImageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
+            {!generationFailed && (
+              <CellScene
+                key={`${selectedCell}-${resetNonce}`}
+                selectedCell={selectedCell}
+                modelCellId={modelCellId}
+                referenceImageUrl={referenceImageUrl}
+                generatedModelUrl={generatedModelUrl}
+                selectedOrganelle={selectedOrganelle}
+                crossSection={crossSection}
+                autoRotate={autoRotate}
+                hideOthers={hideOthers}
+                proofMode={proofMode}
+                renderQuality={renderQuality}
+                onSelectOrganelle={setSelectedOrganelle}
+                onExporterReady={onExporterReady}
+              />
+            )}
+          </>
         )}
       </div>
       {referenceImageUrl && (
         <div className="custom-reference-layer">
           <img src={referenceImageUrl} alt={`${cell.name} uploaded reference`} />
-          <span>{generatedModelUrl ? `Source image used for ${generationProviderLabel} 3D generation` : `Source image for ${generationProviderLabel} generation`}</span>
+          <span>{referenceLabel}</span>
         </div>
       )}
       {generationPending && (
@@ -1737,8 +1835,8 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       </button>
       {proofMode && (
         <div className="proof-badge">
-          <strong>LIVE WEBGL 3D</strong>
-          <span>{generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
+          <strong>{isCinematicCell ? 'CINEMATIC 2.5D' : 'LIVE WEBGL 3D'}</strong>
+          <span>{isCinematicCell ? 'Layered image planes · CSS depth · mouse parallax' : generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
         </div>
       )}
       {labelVisible && (
@@ -1748,7 +1846,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
         </button>
       )}
       <div className="stage-status">
-        {generatedModelUrl ? `${generationProviderLabel} GLB loaded` : generationFailed ? `${generationProviderLabel} failed; source image shown` : referenceImageUrl ? `${generationProviderLabel} ${generation?.status || 'pending'}` : webglAvailable ? 'WebGL live 3D' : 'Fallback image'} · {autoRotate || proofMode ? 'Auto rotate' : 'Manual orbit'} · {viewMode}
+        {stageStatusText}
       </div>
       {capturePulse && <div className="capture-pulse" />}
       <div className="stage-toolbar">
@@ -1871,10 +1969,11 @@ function DetailPanel({ selectedCell, selectedOrganelle, favoriteKey, setFavorite
   )
 }
 
-function BottomDeck({ selectedCell, selectedMicroscope, setSelectedMicroscope, uploadedImage, compareCell, onUploadImage, onCompare, onNotify }) {
+function BottomDeck({ selectedCell, selectedMicroscope, setSelectedMicroscope, uploadedImage, generationMode, onGenerationModeChange, compareCell, onUploadImage, onCompare, onNotify }) {
   const fileInputRef = useRef(null)
   const selected = getCell(selectedCell)
   const compareTarget = getCell(compareCell)
+  const uploadAccept = generationMode === 'local' ? '.glb,.gltf,model/gltf-binary,model/gltf+json' : 'image/*,.glb,.gltf,model/gltf-binary,model/gltf+json'
 
   function handleMicroscopeSelect(item) {
     setSelectedMicroscope(item.label)
@@ -1888,6 +1987,25 @@ function BottomDeck({ selectedCell, selectedMicroscope, setSelectedMicroscope, u
           <span>Microscope View</span>
           <small>3</small>
         </header>
+        <div className="generation-mode-row">
+          <span>Generate Mode</span>
+          <div className="generation-mode-pills">
+            {GENERATION_MODE_OPTIONS.map((mode) => (
+              <button
+                key={mode.id}
+                type="button"
+                className={generationMode === mode.id ? 'active' : ''}
+                onClick={() => {
+                  onGenerationModeChange(mode.id)
+                  onNotify(`${mode.label} mode selected`)
+                }}
+                title={mode.description}
+              >
+                {mode.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <div className="micro-grid">
           {MICROSCOPE_IMAGES.map((item) => (
             <button
@@ -1913,7 +2031,7 @@ function BottomDeck({ selectedCell, selectedMicroscope, setSelectedMicroscope, u
             ref={fileInputRef}
             className="hidden-file-input"
             type="file"
-            accept="image/*,.glb,.gltf,model/gltf-binary,model/gltf+json"
+            accept={uploadAccept}
             onChange={(event) => {
               const file = event.target.files?.[0]
               if (!file) return
@@ -2167,24 +2285,6 @@ function WorkspaceDrawer({
               ))}
             </div>
           </div>
-          <div className="settings-row">
-            <span>
-              <strong>Generation Provider</strong>
-              <small>{GENERATION_PROVIDER_OPTIONS.find((item) => item.id === settings.generationProvider)?.description}</small>
-            </span>
-            <div className="segmented provider-segmented">
-              {GENERATION_PROVIDER_OPTIONS.map((provider) => (
-                <button
-                  key={provider.id}
-                  type="button"
-                  className={settings.generationProvider === provider.id ? 'active' : ''}
-                  onClick={() => onUpdateSettings({ ...settings, generationProvider: provider.id })}
-                >
-                  {provider.label}
-                </button>
-              ))}
-            </div>
-          </div>
           <label className="settings-row">
             <span>
               <strong>Compact UI</strong>
@@ -2368,12 +2468,28 @@ function App() {
     })
   }
 
-  async function generateCustomCellModel(customCell, imageUrl, fileName, requestedProvider = settings.generationProvider) {
+  async function generateCustomCellModel(customCell, imageUrl, fileName, requestedProvider = settings.generationMode) {
     const providers = getProviderPlan(requestedProvider)
     const errors = []
 
     for (const provider of providers) {
       const label = getProviderLabel(provider)
+
+      if (provider === 'cinematic') {
+        updateCustomCell(customCell.id, (cell) => ({
+          generation: {
+            ...cell.generation,
+            provider: 'cinematic',
+            requestedProvider,
+            status: 'local',
+            modelUrl: '',
+            rawModelUrl: '',
+            message: 'Cinematic layered visual is ready.',
+          },
+        }))
+        setToast(`${customCell.name} cinematic layer ready`)
+        return
+      }
 
       try {
         updateCustomCell(customCell.id, (cell) => ({
@@ -2469,13 +2585,14 @@ function App() {
     setToast('Retrying 3D generation')
 
     try {
-      await generateCustomCellModel(cell, cell.imageUrl, `${cell.name}.png`)
+      const retryMode = settings.generationMode === 'local' ? 'cinematic' : settings.generationMode
+      await generateCustomCellModel(cell, cell.imageUrl, `${cell.name}.png`, retryMode)
     } catch (error) {
       console.error(error)
       updateCustomCell(cell.id, (current) => ({
         generation: {
           ...current.generation,
-          requestedProvider: settings.generationProvider,
+          requestedProvider: settings.generationMode,
           status: 'failed',
           modelUrl: '',
           rawModelUrl: '',
@@ -2495,14 +2612,20 @@ function App() {
     setToast('Uploading image for 3D generation')
     let customCell = null
     try {
+      const requestedMode = settings.generationMode === 'local' ? 'cinematic' : settings.generationMode
+      if (settings.generationMode === 'local') setToast('Local GLB mode needs a model file; using Cinematic')
       const imageUrl = await fileToDataUrl(file)
-      customCell = createCustomCell(file.name, imageUrl)
+      customCell = createCustomCell(file.name, imageUrl, {
+        provider: requestedMode,
+        requestedProvider: requestedMode,
+        type: requestedMode === 'cinematic' ? `Cinematic ${getCell(inferCellTemplate(file.name)).name}` : undefined,
+      })
       customCell.generation = {
         ...customCell.generation,
-        provider: settings.generationProvider,
-        requestedProvider: settings.generationProvider,
+        provider: requestedMode,
+        requestedProvider: requestedMode,
         status: 'uploading',
-        message: 'Sending image to backend.',
+        message: requestedMode === 'cinematic' ? 'Building cinematic layer visual.' : 'Sending image to backend.',
       }
       const nextCustomCells = [customCell, ...customCells].slice(0, 8)
 
@@ -2513,14 +2636,14 @@ function App() {
       setSelectedOrganelle(getDefaultOrganelle(customCell.id))
       setCompareCell(customCell.template)
       setActivePanel('Library')
-      await generateCustomCellModel(customCell, imageUrl, file.name)
+      await generateCustomCellModel(customCell, imageUrl, file.name, requestedMode)
     } catch (error) {
       console.error(error)
       if (customCell) {
         updateCustomCell(customCell.id, (cell) => ({
           generation: {
             ...cell.generation,
-            requestedProvider: settings.generationProvider,
+            requestedProvider: settings.generationMode,
             status: 'failed',
             message: error instanceof Error ? error.message : '3D generation failed.',
           },
@@ -2686,6 +2809,8 @@ function App() {
             selectedMicroscope={selectedMicroscope}
             setSelectedMicroscope={setSelectedMicroscope}
             uploadedImage={uploadedImage}
+            generationMode={settings.generationMode}
+            onGenerationModeChange={(generationMode) => setSettings((current) => ({ ...current, generationMode }))}
             onUploadImage={handleUploadImage}
             compareCell={compareCell}
             onCompare={handleOpenCompare}
