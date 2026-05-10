@@ -64,6 +64,8 @@ Auto    Tripo first, Hunyuan backup
 Hunyuan Local Hunyuan3D generation only
 ```
 
+Tripo uploads use the current STS object-storage flow (`/upload/sts/token`) before creating an `image_to_model` task.
+
 Expected Hunyuan3D local API shape:
 
 ```text

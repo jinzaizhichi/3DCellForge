@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { createHash, createHmac } from 'node:crypto'
 import { existsSync, readFileSync } from 'node:fs'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -62,11 +63,9 @@ const server = http.createServer(async (request, response) => {
       requireTripoKey()
       const image = parseDataUrl(payload.imageDataUrl)
       const fileName = sanitizeFileName(payload.fileName || `cell-reference.${image.ext}`)
-      const fileToken = await uploadImageToTripo({ ...image, fileName })
+      const file = await uploadImageToTripo({ ...image, fileName })
       const task = await createTripoImageTask({
-        fileToken,
-        fileType: image.ext,
-        prompt: payload.prompt,
+        file,
       })
 
       sendJson(response, 200, {
@@ -217,37 +216,52 @@ function sanitizeFileName(fileName) {
 }
 
 async function uploadImageToTripo({ buffer, mime, fileName }) {
-  const form = new FormData()
-  form.append('file', new Blob([buffer], { type: mime }), fileName)
-
-  const result = await tripoRequest('/upload', {
+  const format = getTripoUploadFormat(fileName, mime)
+  const tokenResult = await tripoRequest('/upload/sts/token', {
     method: 'POST',
-    body: form,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ format }),
   })
-  const fileToken = findFirstValue(result, ['file_token', 'fileToken', 'image_token', 'imageToken', 'token'])
+  const tokenData = tokenResult.data || tokenResult
+  const host = tokenData.s3_host
+  const bucket = tokenData.resource_bucket
+  const key = tokenData.resource_uri
 
-  if (!fileToken) {
-    const error = new Error('Tripo upload did not return a file token.')
-    error.detail = result
+  if (!host || !bucket || !key || !tokenData.sts_ak || !tokenData.sts_sk || !tokenData.session_token) {
+    const error = new Error('Tripo STS upload token response is missing required fields.')
+    error.detail = sanitizeTripoRaw(tokenResult)
     throw error
   }
 
-  return fileToken
+  await uploadToTripoObjectStorage({
+    buffer,
+    mime,
+    host,
+    bucket,
+    key,
+    accessKeyId: tokenData.sts_ak,
+    secretAccessKey: tokenData.sts_sk,
+    sessionToken: tokenData.session_token,
+  })
+
+  return {
+    type: 'jpg',
+    object: {
+      bucket,
+      key,
+    },
+  }
 }
 
-async function createTripoImageTask({ fileToken, fileType, prompt }) {
-  const richPayload = {
+async function createTripoImageTask({ file }) {
+  const payload = {
     type: 'image_to_model',
     model_version: TRIPO_MODEL_VERSION,
-    file: {
-      type: fileType,
-      file_token: fileToken,
-    },
-    prompt: prompt || '',
+    file,
     texture: true,
     pbr: true,
-    texture_quality: 'detailed',
-    geometry_quality: 'detailed',
+    texture_quality: 'standard',
+    geometry_quality: 'standard',
     enable_image_autofix: true,
   }
 
@@ -255,15 +269,12 @@ async function createTripoImageTask({ fileToken, fileType, prompt }) {
     return normalizeTaskCreateResponse(await tripoRequest('/task', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(richPayload),
+      body: JSON.stringify(payload),
     }))
-  } catch (error) {
+  } catch {
     const minimalPayload = {
       type: 'image_to_model',
-      file: {
-        type: fileType,
-        file_token: fileToken,
-      },
+      file,
     }
 
     return normalizeTaskCreateResponse(await tripoRequest('/task', {
@@ -272,6 +283,74 @@ async function createTripoImageTask({ fileToken, fileType, prompt }) {
       body: JSON.stringify(minimalPayload),
     }))
   }
+}
+
+function getTripoUploadFormat(fileName, mime) {
+  const ext = path.extname(fileName).replace('.', '').toLowerCase()
+  if (ext === 'png' || mime === 'image/png') return 'png'
+  if (ext === 'webp' || mime === 'image/webp') return 'webp'
+  return 'jpeg'
+}
+
+async function uploadToTripoObjectStorage({ buffer, mime, host, bucket, key, accessKeyId, secretAccessKey, sessionToken }) {
+  const region = getAwsRegionFromS3Host(host)
+  const amzDate = getAwsDate()
+  const date = amzDate.slice(0, 8)
+  const payloadHash = sha256Hex(buffer)
+  const canonicalUri = `/${bucket}/${encodeAwsPath(key)}`
+  const headers = {
+    'content-type': mime,
+    host,
+    'x-amz-content-sha256': payloadHash,
+    'x-amz-date': amzDate,
+    'x-amz-security-token': sessionToken,
+  }
+  const signedHeaderNames = Object.keys(headers).sort()
+  const signedHeaders = signedHeaderNames.join(';')
+  const canonicalHeaders = signedHeaderNames.map((name) => `${name}:${String(headers[name]).trim()}\n`).join('')
+  const canonicalRequest = ['PUT', canonicalUri, '', canonicalHeaders, signedHeaders, payloadHash].join('\n')
+  const credentialScope = `${date}/${region}/s3/aws4_request`
+  const stringToSign = ['AWS4-HMAC-SHA256', amzDate, credentialScope, sha256Hex(canonicalRequest)].join('\n')
+  const signingKey = hmac(hmac(hmac(hmac(`AWS4${secretAccessKey}`, date), region), 's3'), 'aws4_request')
+  const signature = createHmac('sha256', signingKey).update(stringToSign).digest('hex')
+  const fetchOptions = shouldUseProxy(`https://${host}`) && OUTBOUND_PROXY_AGENT ? { dispatcher: OUTBOUND_PROXY_AGENT } : {}
+  const response = await undiciFetch(`https://${host}${canonicalUri}`, {
+    method: 'PUT',
+    ...fetchOptions,
+    headers: {
+      ...headers,
+      authorization: `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    },
+    body: buffer,
+  })
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    const error = new Error(`Tripo object upload failed with ${response.status}.`)
+    error.status = response.status || 502
+    error.detail = detail.slice(0, 500)
+    throw error
+  }
+}
+
+function getAwsRegionFromS3Host(host) {
+  return host.match(/s3[.-]([a-z0-9-]+)\./)?.[1] || 'us-west-2'
+}
+
+function getAwsDate(date = new Date()) {
+  return date.toISOString().replace(/[:-]|\.\d{3}/g, '')
+}
+
+function encodeAwsPath(value) {
+  return String(value).split('/').map((part) => encodeURIComponent(part)).join('/')
+}
+
+function sha256Hex(value) {
+  return createHash('sha256').update(value).digest('hex')
+}
+
+function hmac(key, value) {
+  return createHmac('sha256', key).update(value).digest()
 }
 
 function normalizeTaskCreateResponse(raw) {
@@ -471,6 +550,14 @@ function sanitizeHunyuanRaw(raw) {
   if (!raw || typeof raw !== 'object') return raw
   return JSON.parse(JSON.stringify(raw, (key, value) => {
     if (['model_base64', 'modelBase64', 'glb_base64', 'glbBase64'].includes(key)) return '[base64 omitted]'
+    return value
+  }))
+}
+
+function sanitizeTripoRaw(raw) {
+  if (!raw || typeof raw !== 'object') return raw
+  return JSON.parse(JSON.stringify(raw, (key, value) => {
+    if (['sts_ak', 'sts_sk', 'session_token'].includes(key)) return '[secret omitted]'
     return value
   }))
 }
