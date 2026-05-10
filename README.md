@@ -1,8 +1,16 @@
 # 3DCellForge
 
+[English](README.md) | [中文](README.zh-CN.md)
+
 AI-powered interactive 3D cell generation and exploration studio.
 
 3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, organelle panels, screenshots, GLB export, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
+
+## Demo
+
+[![3DCellForge demo](docs/demo/3DCellForge-demo-cover.jpg)](docs/demo/3DCellForge-demo-2026-05-10.mp4)
+
+Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-demo-2026-05-10.mp4)
 
 ## Features
 
