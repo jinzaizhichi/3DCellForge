@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Readable } from 'node:stream'
-import { ProxyAgent } from 'undici'
+import { fetch as undiciFetch, ProxyAgent } from 'undici'
 
 loadLocalEnv()
 
@@ -395,7 +395,7 @@ async function getHunyuanTask(taskId) {
 async function hunyuanRequest(pathname, options = {}) {
   let response
   try {
-    response = await fetch(`${HUNYUAN_API_BASE.replace(/\/$/, '')}${pathname.startsWith('/') ? pathname : `/${pathname}`}`, options)
+    response = await undiciFetch(`${HUNYUAN_API_BASE.replace(/\/$/, '')}${pathname.startsWith('/') ? pathname : `/${pathname}`}`, options)
   } catch (error) {
     const wrapped = new Error(`Hunyuan3D local server unavailable at ${HUNYUAN_API_BASE}. Start the local Hunyuan3D API server or switch provider.`)
     wrapped.detail = {
@@ -482,9 +482,9 @@ async function proxyModel(url, response) {
   }
 
   const fetchOptions = shouldUseProxy(rawUrl) && OUTBOUND_PROXY_AGENT ? { dispatcher: OUTBOUND_PROXY_AGENT } : {}
-  const remote = await fetch(rawUrl, fetchOptions)
+  const remote = await undiciFetch(rawUrl, fetchOptions)
   if (!remote.ok || !remote.body) {
-    const retry = await fetch(rawUrl, {
+    const retry = await undiciFetch(rawUrl, {
       headers: { Authorization: `Bearer ${TRIPO_API_KEY}` },
       ...fetchOptions,
     })
@@ -520,7 +520,7 @@ function streamRemoteModel(remote, response) {
 async function tripoRequest(path, options = {}) {
   let response
   try {
-    response = await fetch(`${TRIPO_API_BASE}${path}`, {
+    response = await undiciFetch(`${TRIPO_API_BASE}${path}`, {
       ...options,
       ...(OUTBOUND_PROXY_AGENT ? { dispatcher: OUTBOUND_PROXY_AGENT } : {}),
       headers: {

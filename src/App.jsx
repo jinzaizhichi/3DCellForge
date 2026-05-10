@@ -196,10 +196,13 @@ const CELL_PROFILES = {
   },
 }
 
+const SETTINGS_STORAGE_KEY = 'bio-demo-settings'
+const SETTINGS_STORAGE_VERSION = 2
 const DEFAULT_SETTINGS = {
   quality: 'balanced',
   compactUi: false,
-  generationProvider: 'auto',
+  generationProvider: 'tripo',
+  settingsVersion: SETTINGS_STORAGE_VERSION,
 }
 
 const CUSTOM_CELL_STORAGE_KEY = 'bio-demo-custom-cells'
@@ -211,6 +214,7 @@ const GENERATION_PROVIDER_OPTIONS = [
   { id: 'tripo', label: 'Tripo', description: 'Cloud generation.' },
   { id: 'hunyuan', label: 'Hunyuan', description: 'Local Hunyuan3D server.' },
 ]
+const GENERATION_PROVIDER_IDS = new Set(GENERATION_PROVIDER_OPTIONS.map((provider) => provider.id))
 
 function apiUrl(path) {
   if (/^https?:\/\//i.test(path)) return path
@@ -396,6 +400,22 @@ function storeValue(key, value) {
   }
 }
 
+function normalizeSettings(value) {
+  const stored = value && typeof value === 'object' ? value : {}
+  const next = { ...DEFAULT_SETTINGS, ...stored }
+
+  if (stored.settingsVersion !== SETTINGS_STORAGE_VERSION) {
+    next.generationProvider = DEFAULT_SETTINGS.generationProvider
+  }
+
+  if (!GENERATION_PROVIDER_IDS.has(next.generationProvider)) {
+    next.generationProvider = DEFAULT_SETTINGS.generationProvider
+  }
+
+  next.settingsVersion = SETTINGS_STORAGE_VERSION
+  return next
+}
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -507,6 +527,7 @@ function createCustomCell(fileName, imageUrl) {
     imageUrl,
     generation: {
       provider: 'tripo',
+      requestedProvider: 'tripo',
       status: 'queued',
       taskId: '',
       modelUrl: '',
@@ -1590,6 +1611,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
   const generatedModelUrl = getGeneratedModelUrl(cell)
   const generation = cell.custom ? cell.generation : null
   const generationProviderLabel = getProviderLabel(generation?.provider)
+  const generationFailureTitle = generation?.requestedProvider === 'auto' ? '3D generation failed' : `${generationProviderLabel} generation failed`
   const detail = getOrganelleDetail(selectedCell, selectedOrganelle)
   const webglAvailable = canUseWebGL()
   const generationPending = cell.custom && !generatedModelUrl && generation?.status && !['failed', 'local'].includes(generation.status)
@@ -1688,7 +1710,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       )}
       {generationFailed && (
         <div className="generation-overlay failed">
-          <strong>{generationProviderLabel} generation failed</strong>
+          <strong>{generationFailureTitle}</strong>
           <span>{generation.message || 'The saved upload failed before a GLB was returned.'}</span>
           <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>
         </div>
@@ -2246,7 +2268,7 @@ function App() {
   const [compareCell, setCompareCell] = useState(getCellProfile('plant').compareTarget)
   const [galleryItems, setGalleryItems] = useState(() => loadStoredValue('bio-demo-gallery', []))
   const [notes, setNotes] = useState(() => loadStoredValue('bio-demo-notes', {}))
-  const [settings, setSettings] = useState(() => ({ ...DEFAULT_SETTINGS, ...loadStoredValue('bio-demo-settings', DEFAULT_SETTINGS) }))
+  const [settings, setSettings] = useState(() => normalizeSettings(loadStoredValue(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS)))
   const allCells = useMemo(() => getAllCells(customCells), [customCells])
 
   useEffect(() => {
@@ -2258,7 +2280,7 @@ function App() {
   }, [notes])
 
   useEffect(() => {
-    storeValue('bio-demo-settings', settings)
+    storeValue(SETTINGS_STORAGE_KEY, settings)
   }, [settings])
 
   useEffect(() => {
@@ -2341,6 +2363,7 @@ function App() {
           generation: {
             ...cell.generation,
             provider,
+            requestedProvider,
             status: 'uploading',
             modelUrl: '',
             rawModelUrl: '',
@@ -2360,6 +2383,7 @@ function App() {
           generation: {
             ...cell.generation,
             provider,
+            requestedProvider,
             status: 'processing',
             taskId: task.taskId,
             message: `${label} is generating the GLB model.`,
@@ -2372,6 +2396,7 @@ function App() {
             generation: {
               ...cell.generation,
               provider,
+              requestedProvider,
               status: status.status || 'processing',
               taskId: task.taskId,
               message: status.progress ? `${label} progress ${status.progress}%` : `${label} status: ${status.status || 'processing'}`,
@@ -2383,6 +2408,7 @@ function App() {
           generation: {
             ...cell.generation,
             provider,
+            requestedProvider,
             status: 'success',
             taskId: task.taskId,
             modelUrl: finalStatus.modelUrl,
@@ -2401,6 +2427,7 @@ function App() {
             generation: {
               ...cell.generation,
               provider,
+              requestedProvider,
               status: 'processing',
               message: `${label} failed; trying ${getProviderLabel(providers[providers.indexOf(provider) + 1])}.`,
             },
@@ -2431,6 +2458,7 @@ function App() {
       updateCustomCell(cell.id, (current) => ({
         generation: {
           ...current.generation,
+          requestedProvider: settings.generationProvider,
           status: 'failed',
           modelUrl: '',
           rawModelUrl: '',
@@ -2450,6 +2478,7 @@ function App() {
       customCell.generation = {
         ...customCell.generation,
         provider: settings.generationProvider,
+        requestedProvider: settings.generationProvider,
         status: 'uploading',
         message: 'Sending image to backend.',
       }
@@ -2469,6 +2498,7 @@ function App() {
         updateCustomCell(customCell.id, (cell) => ({
           generation: {
             ...cell.generation,
+            requestedProvider: settings.generationProvider,
             status: 'failed',
             message: error instanceof Error ? error.message : '3D generation failed.',
           },

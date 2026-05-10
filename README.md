@@ -59,8 +59,8 @@ HUNYUAN_STATUS_PATH=/status
 The app supports three provider modes in Settings:
 
 ```text
+Tripo   Cloud generation only (default)
 Auto    Tripo first, Hunyuan backup
-Tripo   Cloud generation only
 Hunyuan Local Hunyuan3D generation only
 ```
 
