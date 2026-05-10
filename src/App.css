@@ -794,7 +794,7 @@
 
 .cinematic-viewer {
   overflow: hidden;
-  perspective: 900px;
+  perspective: 1100px;
 }
 
 .cinematic-layer-scene {
@@ -804,15 +804,28 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  cursor: crosshair;
+  cursor: grab;
   background:
-    radial-gradient(circle at 42% 42%, rgba(255, 255, 255, 0.72), transparent 35%),
-    radial-gradient(circle at 60% 62%, rgba(112, 164, 191, 0.16), transparent 42%);
+    radial-gradient(circle at 42% 40%, rgba(255, 255, 255, 0.7), transparent 32%),
+    radial-gradient(circle at 64% 62%, rgba(112, 164, 191, 0.18), transparent 40%),
+    linear-gradient(135deg, rgba(255, 252, 242, 0.8), rgba(238, 246, 242, 0.42));
+}
+
+.cinematic-layer-scene:active {
+  cursor: grabbing;
+}
+
+.cinematic-layer-scene canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
 }
 
 .cinematic-depth-field {
   position: absolute;
   inset: 0;
+  z-index: 1;
+  pointer-events: none;
   transform-style: preserve-3d;
 }
 
@@ -821,86 +834,41 @@
   border-radius: 50%;
   background: rgba(116, 156, 186, 0.28);
   box-shadow: 0 0 12px rgba(116, 156, 186, 0.22);
-  transform: translate3d(calc(var(--px) * 10px), calc(var(--py) * 8px), 0);
+  animation: relief-drift 8s ease-in-out infinite;
 }
 
 .depth-1 {
   background: rgba(128, 82, 173, 0.22);
-  transform: translate3d(calc(var(--px) * 22px), calc(var(--py) * 16px), 0);
+  animation-duration: 11s;
 }
 
 .depth-2 {
   background: rgba(226, 119, 116, 0.2);
-  transform: translate3d(calc(var(--px) * -16px), calc(var(--py) * -12px), 0);
+  animation-duration: 9s;
+  animation-direction: reverse;
 }
 
 .depth-3 {
   background: rgba(116, 166, 92, 0.2);
-  transform: translate3d(calc(var(--px) * 30px), calc(var(--py) * -20px), 0);
+  animation-duration: 13s;
 }
 
-.cinematic-specimen {
-  position: relative;
-  width: min(54%, 440px);
-  aspect-ratio: 1;
-  transform-style: preserve-3d;
-  transform:
-    rotateX(calc(var(--py) * -8deg))
-    rotateY(calc(var(--px) * 10deg))
-    translate3d(calc(var(--px) * 8px), calc(var(--py) * 6px), 0);
-  transition: transform 120ms ease-out;
-}
+@keyframes relief-drift {
+  0%,
+  100% {
+    transform: translate3d(-5px, 4px, 0) scale(1);
+  }
 
-.cinematic-specimen img,
-.cinematic-highlight {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  border-radius: 38% 44% 42% 36%;
-  object-fit: cover;
-}
-
-.cinematic-shadow-layer {
-  filter: blur(18px) saturate(0.8);
-  opacity: 0.26;
-  transform: translate3d(calc(var(--px) * -30px), calc(var(--py) * -20px), -80px) scale(1.08);
-}
-
-.cinematic-back-layer {
-  filter: blur(5px) saturate(1.08);
-  opacity: 0.48;
-  transform: translate3d(calc(var(--px) * -18px), calc(var(--py) * -10px), -42px) scale(1.02);
-}
-
-.cinematic-core-layer {
-  filter: saturate(1.12) contrast(1.03);
-  opacity: 0.86;
-  box-shadow: 0 30px 70px rgba(60, 74, 82, 0.18);
-  transform: translate3d(calc(var(--px) * 8px), calc(var(--py) * 4px), 12px);
-}
-
-.cinematic-front-layer {
-  clip-path: circle(34% at 58% 42%);
-  filter: saturate(1.24) brightness(1.08);
-  opacity: 0.58;
-  transform: translate3d(calc(var(--px) * 28px), calc(var(--py) * 18px), 58px) scale(1.03);
-}
-
-.cinematic-highlight {
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 32% 22%, rgba(255, 255, 255, 0.5), transparent 18%),
-    radial-gradient(circle at 70% 72%, rgba(255, 255, 255, 0.26), transparent 22%);
-  mix-blend-mode: screen;
-  transform: translate3d(calc(var(--px) * 20px), calc(var(--py) * 12px), 72px);
+  50% {
+    transform: translate3d(7px, -8px, 0) scale(1.18);
+  }
 }
 
 .cinematic-hotspot {
   position: absolute;
   left: 56%;
   top: 34%;
-  z-index: 4;
+  z-index: 5;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -915,7 +883,7 @@
   font-size: 10px;
   font-weight: 700;
   cursor: pointer;
-  transform: translate3d(calc(var(--px) * 22px), calc(var(--py) * 14px), 0);
+  transform: translate3d(0, 0, 0);
   backdrop-filter: blur(10px);
 }
 

@@ -77,7 +77,7 @@ The upload panel exposes the full generation mode choice before picking a file:
 ```text
 Tripo       Cloud GLB generation
 Hunyuan     Local Hunyuan3D GLB generation
-Cinematic   Layered 2.5D visual from the image
+Cinematic   WebGL image-relief volume from the image
 Auto        Tripo, then Hunyuan, then Cinematic fallback
 Local GLB   Import an existing .glb or self-contained .gltf
 ```

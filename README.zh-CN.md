@@ -78,7 +78,7 @@ Hunyuan 只走本地 Hunyuan3D
 ```text
 Tripo       云端 GLB 生成
 Hunyuan     本地 Hunyuan3D GLB 生成
-Cinematic   从图片生成分层 2.5D 视觉效果
+Cinematic   从图片生成 WebGL 图像体积浮雕
 Auto        Tripo -> Hunyuan -> Cinematic 依次降级
 Local GLB   导入已有 .glb 或自包含 .gltf
 ```

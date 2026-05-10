@@ -1,6 +1,6 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
-import { ContactShadows, Line, OrbitControls, RoundedBox, useGLTF } from '@react-three/drei'
+import { ContactShadows, Line, OrbitControls, RoundedBox, useGLTF, useTexture } from '@react-three/drei'
 import { motion } from 'framer-motion'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import {
@@ -198,6 +198,8 @@ const CELL_PROFILES = {
 
 const SETTINGS_STORAGE_KEY = 'bio-demo-settings'
 const SETTINGS_STORAGE_VERSION = 3
+const UI_STATE_STORAGE_KEY = 'bio-demo-ui-state'
+const UI_STATE_STORAGE_VERSION = 1
 const DEFAULT_SETTINGS = {
   quality: 'balanced',
   compactUi: false,
@@ -207,6 +209,9 @@ const DEFAULT_SETTINGS = {
 }
 
 const CUSTOM_CELL_STORAGE_KEY = 'bio-demo-custom-cells'
+const MAX_PERSISTED_IMAGE_EDGE = 1280
+const COMPACT_PERSISTED_IMAGE_EDGE = 900
+const MAX_PERSISTED_IMAGE_CHARS = 3_200_000
 const MODEL_API_BASE = import.meta.env.VITE_MODEL_API_BASE || import.meta.env.VITE_TRIPO_API_BASE || 'http://127.0.0.1:8787'
 const GENERATION_POLL_INTERVAL_MS = 3500
 const GENERATION_TIMEOUT_MS = 8 * 60 * 1000
@@ -219,7 +224,7 @@ const GENERATION_PROVIDER_IDS = new Set(GENERATION_PROVIDER_OPTIONS.map((provide
 const GENERATION_MODE_OPTIONS = [
   { id: 'tripo', label: 'Tripo', description: 'Cloud GLB generation.' },
   { id: 'hunyuan', label: 'Hunyuan', description: 'Local Hunyuan3D GLB generation.' },
-  { id: 'cinematic', label: 'Cinematic', description: 'Layered 2.5D visual from the image.' },
+  { id: 'cinematic', label: 'Cinematic', description: 'WebGL image-relief volume from the image.' },
   { id: 'auto', label: 'Auto', description: 'Tripo, then Hunyuan, then Cinematic fallback.' },
   { id: 'local', label: 'Local GLB', description: 'Import an existing GLB or GLTF file.' },
 ]
@@ -363,12 +368,12 @@ function getCellProfile(cellId, customCells = getStoredCustomCells()) {
     return {
       ...baseProfile,
       summary: isCinematic
-        ? `Cinematic layered visual from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
+        ? `WebGL image-relief volume from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
         : hasGeneratedModel
         ? `AI-generated GLB from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
         : `Uploaded image queued for image-to-3D generation; fallback scaffold is ${getCell(customCell.template).name}.`,
       comparison: isCinematic
-        ? 'This custom sample uses layered image parallax for visual depth, not a real exported mesh.'
+        ? 'This custom sample uses WebGL texture displacement and transparent volume slices for depth, not a full AI-generated mesh.'
         : hasGeneratedModel
         ? 'This custom sample is loaded as a real generated GLB in the WebGL viewer.'
         : `This custom sample will use the ${getCell(customCell.template).name} fallback while generation is running.`,
@@ -443,6 +448,158 @@ function fileToDataUrl(file) {
     reader.onerror = () => reject(reader.error)
     reader.readAsDataURL(file)
   })
+}
+
+function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Image could not be decoded.'))
+    image.src = url
+  })
+}
+
+function getCanvasDataUrl(canvas) {
+  const webp = canvas.toDataURL('image/webp', 0.9)
+  if (webp.startsWith('data:image/webp')) return webp
+  return canvas.toDataURL('image/png')
+}
+
+function resampleCanvas(sourceCanvas, maxEdge) {
+  const scale = Math.min(1, maxEdge / Math.max(sourceCanvas.width, sourceCanvas.height))
+  if (scale >= 1) return sourceCanvas
+
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale))
+  canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale))
+  const context = canvas.getContext('2d')
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height)
+  return canvas
+}
+
+function trimTransparentCanvas(sourceCanvas, padding = 34) {
+  const context = sourceCanvas.getContext('2d')
+  const imageData = context.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height)
+  const { data, width, height } = imageData
+  let minX = width
+  let minY = height
+  let maxX = -1
+  let maxY = -1
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const alpha = data[(y * width + x) * 4 + 3]
+      if (alpha < 10) continue
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+  }
+
+  if (maxX < minX || maxY < minY) return sourceCanvas
+
+  const cropX = Math.max(0, minX - padding)
+  const cropY = Math.max(0, minY - padding)
+  const cropW = Math.min(width - cropX, maxX - minX + padding * 2)
+  const cropH = Math.min(height - cropY, maxY - minY + padding * 2)
+  const cropRatio = (cropW * cropH) / (width * height)
+  if (cropRatio > 0.94) return sourceCanvas
+
+  const canvas = document.createElement('canvas')
+  canvas.width = cropW
+  canvas.height = cropH
+  canvas.getContext('2d').drawImage(sourceCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH)
+  return canvas
+}
+
+function removeLightBackground(canvas) {
+  const context = canvas.getContext('2d')
+  const imageData = context.getImageData(0, 0, canvas.width, canvas.height)
+  const { data, width, height } = imageData
+  const sampleStep = Math.max(1, Math.floor(Math.min(width, height) / 90))
+  let edgeSamples = 0
+  let lightEdgeSamples = 0
+
+  function isLightNeutral(index) {
+    const r = data[index]
+    const g = data[index + 1]
+    const b = data[index + 2]
+    const brightness = (r + g + b) / 3
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b)
+    return brightness > 232 && chroma < 42
+  }
+
+  for (let x = 0; x < width; x += sampleStep) {
+    edgeSamples += 2
+    if (isLightNeutral(x * 4)) lightEdgeSamples += 1
+    if (isLightNeutral(((height - 1) * width + x) * 4)) lightEdgeSamples += 1
+  }
+
+  for (let y = 0; y < height; y += sampleStep) {
+    edgeSamples += 2
+    if (isLightNeutral((y * width) * 4)) lightEdgeSamples += 1
+    if (isLightNeutral((y * width + width - 1) * 4)) lightEdgeSamples += 1
+  }
+
+  const shouldRemove = edgeSamples > 0 && lightEdgeSamples / edgeSamples > 0.42
+  if (!shouldRemove) return canvas
+
+  for (let index = 0; index < data.length; index += 4) {
+    const r = data[index]
+    const g = data[index + 1]
+    const b = data[index + 2]
+    const brightness = (r + g + b) / 3
+    const chroma = Math.max(r, g, b) - Math.min(r, g, b)
+
+    if (brightness > 242 && chroma < 36) {
+      data[index + 3] = 0
+    } else if (brightness > 224 && chroma < 46) {
+      const keep = Math.max(0, Math.min(1, (242 - brightness) / 18 + chroma / 92))
+      data[index + 3] = Math.round(data[index + 3] * keep)
+    }
+  }
+
+  context.putImageData(imageData, 0, 0)
+  return trimTransparentCanvas(canvas)
+}
+
+async function buildPersistentImageDataUrl(sourceUrl, maxEdge = MAX_PERSISTED_IMAGE_EDGE) {
+  const image = await loadImageFromUrl(sourceUrl)
+  const scale = Math.min(1, maxEdge / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale))
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale))
+
+  const context = canvas.getContext('2d')
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  const cutoutCanvas = removeLightBackground(canvas)
+  const dataUrl = getCanvasDataUrl(cutoutCanvas)
+  if (dataUrl.length <= MAX_PERSISTED_IMAGE_CHARS || maxEdge <= COMPACT_PERSISTED_IMAGE_EDGE) return dataUrl
+
+  return getCanvasDataUrl(resampleCanvas(cutoutCanvas, COMPACT_PERSISTED_IMAGE_EDGE))
+}
+
+async function prepareImageForUpload(file) {
+  const sourceUrl = await fileToDataUrl(file)
+  if (typeof sourceUrl !== 'string' || !file.type.startsWith('image/')) {
+    return { displayUrl: sourceUrl, generationUrl: sourceUrl }
+  }
+
+  try {
+    return {
+      displayUrl: await buildPersistentImageDataUrl(sourceUrl),
+      generationUrl: sourceUrl,
+    }
+  } catch (error) {
+    console.warn(error)
+    return { displayUrl: sourceUrl, generationUrl: sourceUrl }
+  }
 }
 
 function delay(ms) {
@@ -571,6 +728,25 @@ function createCustomCell(fileName, imageUrl, options = {}) {
       rawModelUrl: options.rawModelUrl || '',
       message: options.message || 'Waiting for image-to-3D generation.',
     },
+  }
+}
+
+function getUploadPreviewFromCustomCells(customCells) {
+  const latest = customCells.find((cell) => cell.custom)
+  if (!latest) return null
+  return { name: latest.name, url: latest.imageUrl || '' }
+}
+
+function normalizeUiState(value) {
+  const stored = value && typeof value === 'object' ? value : {}
+  return {
+    selectedCell: typeof stored.selectedCell === 'string' ? stored.selectedCell : 'plant',
+    selectedOrganelle: typeof stored.selectedOrganelle === 'string' ? stored.selectedOrganelle : 'nucleus',
+    selectedMicroscope: typeof stored.selectedMicroscope === 'string' ? stored.selectedMicroscope : MICROSCOPE_IMAGES[0].label,
+    compareCell: typeof stored.compareCell === 'string' ? stored.compareCell : getCellProfile('plant').compareTarget,
+    crossSection: typeof stored.crossSection === 'boolean' ? stored.crossSection : true,
+    favoriteKey: typeof stored.favoriteKey === 'string' ? stored.favoriteKey : '',
+    uiStateVersion: UI_STATE_STORAGE_VERSION,
   }
 }
 
@@ -1409,36 +1585,96 @@ function GeneratedGlbModel({ modelUrl, proofMode, onSelect }) {
   )
 }
 
-function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle }) {
-  const [pointer, setPointer] = useState({ x: 0, y: 0 })
-  const particles = useMemo(() => (
-    Array.from({ length: 20 }, (_, index) => ({
+function CinematicReliefModel({ imageUrl, onSelectOrganelle }) {
+  const texture = useTexture(imageUrl)
+  const preparedTexture = useMemo(() => {
+    const cloned = texture.clone()
+    cloned.colorSpace = THREE.SRGBColorSpace
+    cloned.anisotropy = 8
+    cloned.wrapS = THREE.ClampToEdgeWrapping
+    cloned.wrapT = THREE.ClampToEdgeWrapping
+    cloned.needsUpdate = true
+    return cloned
+  }, [texture])
+  const slices = useMemo(() => Array.from({ length: 15 }, (_, index) => {
+    const t = index / 14
+    return {
       id: index,
-      x: 12 + seeded(index + 300) * 76,
-      y: 10 + seeded(index + 360) * 78,
-      size: 3 + seeded(index + 420) * 8,
+      z: (t - 0.5) * 0.5,
+      scale: 1 + Math.sin(t * Math.PI) * 0.1,
+      opacity: 0.025 + Math.sin(t * Math.PI) * 0.06,
+    }
+  }), [])
+
+  const imageAspect = preparedTexture.image ? preparedTexture.image.width / preparedTexture.image.height : 1
+  const width = imageAspect >= 1 ? 3.35 : 3.35 * imageAspect
+  const height = imageAspect >= 1 ? 3.35 / imageAspect : 3.35
+
+  return (
+    <group
+      rotation={[-0.18, -0.26, 0.02]}
+      onClick={(event) => {
+        event.stopPropagation()
+        onSelectOrganelle('membrane')
+      }}>
+      <mesh position={[0, -0.1, -0.32]} scale={[1.04, 1.04, 1]}>
+        <planeGeometry args={[width, height, 96, 96]} />
+        <meshBasicMaterial map={preparedTexture} transparent opacity={0.18} alphaTest={0.04} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      {slices.map((slice) => (
+        <mesh key={slice.id} position={[0, 0, slice.z]} scale={[slice.scale, slice.scale, 1]}>
+          <planeGeometry args={[width, height, 112, 112]} />
+          <meshStandardMaterial
+            map={preparedTexture}
+            transparent
+            opacity={slice.opacity}
+            alphaTest={0.045}
+            depthWrite={false}
+            roughness={0.54}
+            metalness={0.02}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      ))}
+      <mesh position={[0, 0, 0.34]}>
+        <planeGeometry args={[width, height, 180, 180]} />
+        <meshPhysicalMaterial
+          map={preparedTexture}
+          displacementMap={preparedTexture}
+          displacementScale={0.44}
+          displacementBias={-0.08}
+          transparent
+          alphaTest={0.055}
+          roughness={0.36}
+          metalness={0.02}
+          clearcoat={0.38}
+          clearcoatRoughness={0.46}
+          envMapIntensity={1.1}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <mesh position={[0, 0, 0.64]} scale={[1.01, 1.01, 1]}>
+        <planeGeometry args={[width, height, 96, 96]} />
+        <meshBasicMaterial map={preparedTexture} transparent opacity={0.18} alphaTest={0.12} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+      <Line points={[[-width * 0.38, -height * 0.5, -0.08], [width * 0.34, -height * 0.48, 0.12], [width * 0.44, -height * 0.2, 0.24]]} color="#f3a0bd" lineWidth={2.4} transparent opacity={0.36} />
+    </group>
+  )
+}
+
+function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle, autoRotate }) {
+  const particles = useMemo(() => (
+    Array.from({ length: 26 }, (_, index) => ({
+      id: index,
+      x: 10 + seeded(index + 300) * 80,
+      y: 8 + seeded(index + 360) * 80,
+      size: 3 + seeded(index + 420) * 9,
       depth: index % 4,
     }))
   ), [])
 
-  function handlePointerMove(event) {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
-    const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2
-    setPointer({
-      x: Math.max(-1, Math.min(1, x)),
-      y: Math.max(-1, Math.min(1, y)),
-    })
-  }
-
   return (
-    <div
-      className="cinematic-layer-scene"
-      style={{ '--px': pointer.x.toFixed(3), '--py': pointer.y.toFixed(3) }}
-      onPointerMove={handlePointerMove}
-      onPointerLeave={() => setPointer({ x: 0, y: 0 })}
-      onClick={() => onSelectOrganelle('membrane')}
-    >
+    <div className="cinematic-layer-scene">
       <div className="cinematic-depth-field">
         {particles.map((particle) => (
           <span
@@ -1453,13 +1689,25 @@ function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle }
           />
         ))}
       </div>
-      <div className="cinematic-specimen" aria-label="Cinematic layered image visual">
-        <img className="cinematic-shadow-layer" src={imageUrl} alt="" />
-        <img className="cinematic-back-layer" src={imageUrl} alt="" />
-        <img className="cinematic-core-layer" src={imageUrl} alt="" />
-        <img className="cinematic-front-layer" src={imageUrl} alt="" />
-        <span className="cinematic-highlight" />
-      </div>
+      <Canvas
+        camera={{ position: [0, 0.15, 5.1], fov: 36 }}
+        dpr={[1, 1.6]}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
+        onCreated={({ gl }) => {
+          gl.toneMapping = THREE.ACESFilmicToneMapping
+          gl.toneMappingExposure = 1.15
+        }}
+      >
+        <ambientLight intensity={1.22} />
+        <directionalLight position={[3.2, 3.8, 4.8]} intensity={3.1} color="#fff2df" />
+        <directionalLight position={[-3.6, 1.4, 2.8]} intensity={1.35} color="#d7efff" />
+        <pointLight position={[0.6, -2.4, 2.8]} intensity={1.2} color="#f9a8d4" />
+        <Suspense fallback={null}>
+          <CinematicReliefModel imageUrl={imageUrl} onSelectOrganelle={onSelectOrganelle} />
+        </Suspense>
+        <ContactShadows frames={1} position={[0, -1.45, -0.15]} opacity={0.18} scale={5.4} blur={2.7} far={2.6} color="#8c7564" />
+        <OrbitControls enablePan={false} minDistance={3.6} maxDistance={6.6} enableDamping dampingFactor={0.08} autoRotate={autoRotate} autoRotateSpeed={0.45} />
+      </Canvas>
       <button type="button" className="cinematic-hotspot" style={{ '--label-color': ORGANELLES[selectedOrganelle]?.accent || '#72a4bf' }} onClick={(event) => {
         event.stopPropagation()
         onSelectOrganelle(selectedOrganelle)
@@ -1717,10 +1965,10 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
   const generationPending = cell.custom && !generatedModelUrl && generation?.status && !['failed', 'local'].includes(generation.status)
   const generationFailed = cell.custom && !generatedModelUrl && generation?.status === 'failed'
   const stageStatusText = isCinematicCell
-    ? `Cinematic layer visual · Mouse parallax · ${viewMode}`
+    ? `WebGL image-relief volume · ${autoRotate ? 'Auto rotate' : 'Manual orbit'} · ${viewMode}`
     : `${generatedModelUrl ? `${generationProviderLabel} GLB loaded` : generationFailed ? `${generationProviderLabel} failed; source image shown` : referenceImageUrl ? `${generationProviderLabel} ${generation?.status || 'pending'}` : webglAvailable ? 'WebGL live 3D' : 'Fallback image'} · ${autoRotate || proofMode ? 'Auto rotate' : 'Manual orbit'} · ${viewMode}`
   const referenceLabel = isCinematicCell
-    ? 'Source image used for Cinematic Layer visual'
+    ? 'Source image used for WebGL relief volume'
     : generatedModelUrl
     ? `Source image used for ${generationProviderLabel} 3D generation`
     : `Source image for ${generationProviderLabel} generation`
@@ -1772,6 +2020,10 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
     onNotify(ok ? 'Screenshot downloaded' : 'Screenshot unavailable in this browser')
   }
 
+  useEffect(() => {
+    if (isCinematicCell) onExporterReady?.(null)
+  }, [isCinematicCell, onExporterReady])
+
   return (
     <section className="stage-panel">
       <div className="stage-title">
@@ -1783,7 +2035,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       <ViewerControls crossSection={crossSection} setCrossSection={setCrossSection} viewMode={viewMode} setViewMode={setViewMode} />
       <div className={`cell-viewer ${viewMode} ${isIsolated ? 'is-isolated' : ''} ${isCinematicCell ? 'cinematic-viewer' : ''}`}>
         {isCinematicCell ? (
-          <CinematicLayerVisual imageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
+          <CinematicLayerVisual imageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} autoRotate={autoRotate || proofMode} />
         ) : (
           <>
             <CellFallback selectedCell={selectedCell} modelCellId={modelCellId} referenceImageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
@@ -1835,8 +2087,8 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       </button>
       {proofMode && (
         <div className="proof-badge">
-          <strong>{isCinematicCell ? 'CINEMATIC 2.5D' : 'LIVE WEBGL 3D'}</strong>
-          <span>{isCinematicCell ? 'Layered image planes · CSS depth · mouse parallax' : generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
+          <strong>{isCinematicCell ? 'WEBGL RELIEF 3D' : 'LIVE WEBGL 3D'}</strong>
+          <span>{isCinematicCell ? 'Texture displacement · transparent volume slices · OrbitControls' : generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
         </div>
       )}
       {labelVisible && (
@@ -2371,18 +2623,20 @@ function StatusToast({ message }) {
 }
 
 function App() {
-  const [selectedCell, setSelectedCell] = useState('plant')
-  const [selectedOrganelle, setSelectedOrganelle] = useState('nucleus')
-  const [crossSection, setCrossSection] = useState(true)
+  const initialCustomCellsRef = useRef(loadStoredValue(CUSTOM_CELL_STORAGE_KEY, []))
+  const initialUiStateRef = useRef(normalizeUiState(loadStoredValue(UI_STATE_STORAGE_KEY, {})))
+  const [customCells, setCustomCells] = useState(() => initialCustomCellsRef.current)
+  const [selectedCell, setSelectedCell] = useState(() => initialUiStateRef.current.selectedCell)
+  const [selectedOrganelle, setSelectedOrganelle] = useState(() => initialUiStateRef.current.selectedOrganelle)
+  const [crossSection, setCrossSection] = useState(() => initialUiStateRef.current.crossSection)
   const [activePanel, setActivePanel] = useState(null)
   const [toast, setToast] = useState('Plant cell ready')
-  const [favoriteKey, setFavoriteKey] = useState('')
+  const [favoriteKey, setFavoriteKey] = useState(() => initialUiStateRef.current.favoriteKey)
   const [labelVisible, setLabelVisible] = useState(() => loadStoredValue('bio-demo-label-visible', true))
-  const [selectedMicroscope, setSelectedMicroscope] = useState(MICROSCOPE_IMAGES[0].label)
-  const [uploadedImage, setUploadedImage] = useState(null)
+  const [selectedMicroscope, setSelectedMicroscope] = useState(() => initialUiStateRef.current.selectedMicroscope)
+  const [uploadedImage, setUploadedImage] = useState(() => getUploadPreviewFromCustomCells(initialCustomCellsRef.current))
   const [sceneExporter, setSceneExporter] = useState(null)
-  const [customCells, setCustomCells] = useState(() => loadStoredValue(CUSTOM_CELL_STORAGE_KEY, []))
-  const [compareCell, setCompareCell] = useState(getCellProfile('plant').compareTarget)
+  const [compareCell, setCompareCell] = useState(() => initialUiStateRef.current.compareCell)
   const [galleryItems, setGalleryItems] = useState(() => loadStoredValue('bio-demo-gallery', []))
   const [notes, setNotes] = useState(() => loadStoredValue('bio-demo-notes', {}))
   const [settings, setSettings] = useState(() => normalizeSettings(loadStoredValue(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS)))
@@ -2408,15 +2662,47 @@ function App() {
     storeValue(CUSTOM_CELL_STORAGE_KEY, customCells)
   }, [customCells])
 
+  useEffect(() => {
+    storeValue(UI_STATE_STORAGE_KEY, {
+      selectedCell,
+      selectedOrganelle,
+      selectedMicroscope,
+      compareCell,
+      crossSection,
+      favoriteKey,
+      uiStateVersion: UI_STATE_STORAGE_VERSION,
+    })
+  }, [compareCell, crossSection, favoriteKey, selectedCell, selectedMicroscope, selectedOrganelle])
+
+  useEffect(() => {
+    if (!uploadedImage) setUploadedImage(getUploadPreviewFromCustomCells(customCells))
+  }, [customCells, uploadedImage])
+
+  useEffect(() => {
+    if (allCells.some((cell) => cell.id === selectedCell)) return
+    setSelectedCell('plant')
+    setSelectedOrganelle(getDefaultOrganelle('plant'))
+    setCompareCell(getCellProfile('plant').compareTarget)
+    setToast('Saved custom cell was missing; Plant Cell loaded')
+  }, [allCells, selectedCell])
+
+  useEffect(() => {
+    const available = getAvailableOrganelleIds(selectedCell)
+    if (available.includes(selectedOrganelle)) return
+    setSelectedOrganelle(getDefaultOrganelle(selectedCell))
+  }, [customCells, selectedCell, selectedOrganelle])
+
   function handleSelectCell(cellId) {
+    const nextCell = getCell(cellId, customCells)
     setSelectedCell(cellId)
     setSelectedOrganelle(getDefaultOrganelle(cellId))
     setCompareCell((current) => (current === cellId ? getCellProfile(cellId).compareTarget : current))
-    setToast(`${getCell(cellId).name} loaded`)
+    if (nextCell.custom) setUploadedImage({ name: nextCell.name, url: nextCell.imageUrl || '' })
+    setToast(`${nextCell.name} loaded`)
   }
 
   async function handleExport() {
-    const cell = getCell(selectedCell)
+    const cell = getCell(selectedCell, customCells)
     const detail = getOrganelleDetail(selectedCell, selectedOrganelle)
 
     if (!sceneExporter) {
@@ -2484,10 +2770,10 @@ function App() {
             status: 'local',
             modelUrl: '',
             rawModelUrl: '',
-            message: 'Cinematic layered visual is ready.',
+            message: 'Cinematic WebGL relief volume is ready.',
           },
         }))
-        setToast(`${customCell.name} cinematic layer ready`)
+        setToast(`${customCell.name} relief volume ready`)
         return
       }
 
@@ -2614,8 +2900,8 @@ function App() {
     try {
       const requestedMode = settings.generationMode === 'local' ? 'cinematic' : settings.generationMode
       if (settings.generationMode === 'local') setToast('Local GLB mode needs a model file; using Cinematic')
-      const imageUrl = await fileToDataUrl(file)
-      customCell = createCustomCell(file.name, imageUrl, {
+      const { displayUrl, generationUrl } = await prepareImageForUpload(file)
+      customCell = createCustomCell(file.name, displayUrl, {
         provider: requestedMode,
         requestedProvider: requestedMode,
         type: requestedMode === 'cinematic' ? `Cinematic ${getCell(inferCellTemplate(file.name)).name}` : undefined,
@@ -2625,18 +2911,18 @@ function App() {
         provider: requestedMode,
         requestedProvider: requestedMode,
         status: 'uploading',
-        message: requestedMode === 'cinematic' ? 'Building cinematic layer visual.' : 'Sending image to backend.',
+        message: requestedMode === 'cinematic' ? 'Building WebGL relief volume.' : 'Sending image to backend.',
       }
       const nextCustomCells = [customCell, ...customCells].slice(0, 8)
 
       setCustomCells(nextCustomCells)
       storeValue(CUSTOM_CELL_STORAGE_KEY, nextCustomCells)
-      setUploadedImage({ name: file.name, url: imageUrl })
+      setUploadedImage({ name: file.name, url: displayUrl })
       setSelectedCell(customCell.id)
       setSelectedOrganelle(getDefaultOrganelle(customCell.id))
       setCompareCell(customCell.template)
       setActivePanel('Library')
-      await generateCustomCellModel(customCell, imageUrl, file.name, requestedMode)
+      await generateCustomCellModel(customCell, generationUrl, file.name, requestedMode)
     } catch (error) {
       console.error(error)
       if (customCell) {
@@ -2735,7 +3021,7 @@ function App() {
   function handleOpenCompare(cellId) {
     setCompareCell(cellId)
     setActivePanel('Compare')
-    setToast(`${getCell(selectedCell).name} compared with ${getCell(cellId).name}`)
+    setToast(`${getCell(selectedCell, customCells).name} compared with ${getCell(cellId, customCells).name}`)
   }
 
   return (
