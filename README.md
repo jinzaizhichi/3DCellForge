@@ -20,6 +20,7 @@ Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-dem
 - Tripo cloud image-to-3D pipeline through a local Node backend.
 - Hunyuan3D local provider support as a backup generation path.
 - Cached demo GLB models for offline-friendly screenshots and demos.
+- Auxiliary Khronos glTF reference models for GLB loader and PBR material checks.
 - API key stays server-side in `.env.local`; it is never exposed to the frontend bundle.
 
 ## Tech Stack
@@ -77,8 +78,8 @@ The upload panel exposes the full generation mode choice before picking a file:
 ```text
 Tripo       Cloud GLB generation
 Hunyuan     Local Hunyuan3D GLB generation
-Cinematic   Layered transparent PNG composition for high-quality demos
-Auto        Tripo, then Hunyuan, then Cinematic fallback
+JS Depth    Browser-side image relief with layered PNG fallback
+Auto        Tripo, then Hunyuan, then JS Depth fallback
 Local GLB   Import an existing .glb or self-contained .gltf
 ```
 
@@ -119,6 +120,16 @@ public/generated-models/
 ```
 
 These make the demo usable without spending API credits on every run.
+
+## Reference Models
+
+The Library panel includes remote Khronos glTF Sample Models as auxiliary references for material and loader checks:
+
+- Transmission Test, CC0, Adobe via Khronos.
+- Transmission Roughness Test, CC-BY 4.0, Ed Mackey / Analytical Graphics via Khronos.
+- Mosquito In Amber, CC-BY 4.0, Loic Norgeot / Geoffrey Marchal / Sketchfab via Khronos.
+
+These are loaded from the archived Khronos sample repository and are not bundled into this repo.
 
 ## Security
 

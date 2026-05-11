@@ -1,6 +1,6 @@
 import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { ContactShadows, Line, OrbitControls, RoundedBox, useGLTF } from '@react-three/drei'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { ContactShadows, Line, OrbitControls, RoundedBox, useGLTF, useTexture } from '@react-three/drei'
 import { motion } from 'framer-motion'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
 import {
@@ -70,6 +70,75 @@ const SEEDED_GENERATED_CELLS = [
       modelUrl: '/generated-models/tripo-plant-cell-test.glb',
       rawModelUrl: '',
       message: 'Cached GLB from the verified Tripo test run.',
+    },
+  },
+]
+
+const KHRONOS_REFERENCE_CELLS = [
+  {
+    id: 'khronos-transmission-test',
+    name: 'Transmission Test',
+    type: 'Khronos PBR Reference',
+    accent: '#72a4bf',
+    custom: true,
+    reference: true,
+    template: 'animal',
+    imageUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TransmissionTest/screenshot/screenshot_large.png',
+    referenceSummary: 'Official Khronos glTF sample for KHR_materials_transmission. Useful for tuning transparent membranes, glassy shells, and opacity interactions.',
+    referenceLicense: 'CC0, Adobe via Khronos glTF Sample Models',
+    referenceSource: 'https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TransmissionTest',
+    generation: {
+      provider: 'reference',
+      requestedProvider: 'reference',
+      status: 'success',
+      taskId: 'khronos-transmission-test',
+      modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TransmissionTest/glTF-Binary/TransmissionTest.glb',
+      rawModelUrl: '',
+      message: 'Remote Khronos GLB reference for transparent material behavior.',
+    },
+  },
+  {
+    id: 'khronos-transmission-roughness',
+    name: 'Transmission Roughness',
+    type: 'Khronos PBR Reference',
+    accent: '#8eb4cf',
+    custom: true,
+    reference: true,
+    template: 'animal',
+    imageUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TransmissionRoughnessTest/screenshot/screenshot-large.png',
+    referenceSummary: 'Official Khronos glTF sample for transmission, IOR, roughness, and volume. Useful for soft translucent cell walls and membrane haze.',
+    referenceLicense: 'CC-BY 4.0, Ed Mackey / Analytical Graphics via Khronos glTF Sample Models',
+    referenceSource: 'https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TransmissionRoughnessTest',
+    generation: {
+      provider: 'reference',
+      requestedProvider: 'reference',
+      status: 'success',
+      taskId: 'khronos-transmission-roughness',
+      modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TransmissionRoughnessTest/glTF-Binary/TransmissionRoughnessTest.glb',
+      rawModelUrl: '',
+      message: 'Remote Khronos GLB reference for IOR and translucent roughness.',
+    },
+  },
+  {
+    id: 'khronos-mosquito-amber',
+    name: 'Mosquito In Amber',
+    type: 'Khronos Bio Reference',
+    accent: '#d18a42',
+    custom: true,
+    reference: true,
+    template: 'bacteria',
+    imageUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/MosquitoInAmber/screenshot/screenshot.jpg',
+    referenceSummary: 'Biological specimen in a transparent amber volume. Useful as a target for organic detail plus translucent material presentation.',
+    referenceLicense: 'CC-BY 4.0, Loic Norgeot / Geoffrey Marchal / Sketchfab via Khronos glTF Sample Models',
+    referenceSource: 'https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/MosquitoInAmber',
+    generation: {
+      provider: 'reference',
+      requestedProvider: 'reference',
+      status: 'success',
+      taskId: 'khronos-mosquito-amber',
+      modelUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/MosquitoInAmber/glTF-Binary/MosquitoInAmber.glb',
+      rawModelUrl: '',
+      message: 'Remote Khronos biological GLB reference. This model is larger and may take longer to load.',
     },
   },
 ]
@@ -224,8 +293,8 @@ const GENERATION_PROVIDER_IDS = new Set(GENERATION_PROVIDER_OPTIONS.map((provide
 const GENERATION_MODE_OPTIONS = [
   { id: 'tripo', label: 'Tripo', description: 'Cloud GLB generation.' },
   { id: 'hunyuan', label: 'Hunyuan', description: 'Local Hunyuan3D GLB generation.' },
-  { id: 'cinematic', label: 'Cinematic', description: 'Layered transparent PNG composition.' },
-  { id: 'auto', label: 'Auto', description: 'Tripo, then Hunyuan, then Cinematic fallback.' },
+  { id: 'cinematic', label: 'JS Depth', description: 'Browser-side image relief with layered PNG fallback.' },
+  { id: 'auto', label: 'Auto', description: 'Tripo, then Hunyuan, then JS Depth fallback.' },
   { id: 'local', label: 'Local GLB', description: 'Import an existing GLB or GLTF file.' },
 ]
 const GENERATION_MODE_IDS = new Set(GENERATION_MODE_OPTIONS.map((mode) => mode.id))
@@ -340,11 +409,15 @@ function getStoredCustomCells() {
   return loadStoredValue(CUSTOM_CELL_STORAGE_KEY, [])
 }
 
-function getAllCells(customCells = getStoredCustomCells()) {
+function getPrimaryCells(customCells = getStoredCustomCells()) {
   const activeCustomCells = customCells.filter((cell) => cell.generation?.status !== 'failed')
   const failedCustomCells = customCells.filter((cell) => cell.generation?.status === 'failed')
 
   return [...activeCustomCells, ...SEEDED_GENERATED_CELLS, ...failedCustomCells, ...CELL_TYPES]
+}
+
+function getAllCells(customCells = getStoredCustomCells()) {
+  return [...getPrimaryCells(customCells), ...KHRONOS_REFERENCE_CELLS]
 }
 
 function getCell(cellId, customCells = getStoredCustomCells()) {
@@ -352,7 +425,7 @@ function getCell(cellId, customCells = getStoredCustomCells()) {
 }
 
 function getCustomCell(cellId, customCells = getStoredCustomCells()) {
-  return [...customCells, ...SEEDED_GENERATED_CELLS].find((cell) => cell.id === cellId)
+  return [...customCells, ...SEEDED_GENERATED_CELLS, ...KHRONOS_REFERENCE_CELLS].find((cell) => cell.id === cellId)
 }
 
 function getModelCellId(cellId, customCells = getStoredCustomCells()) {
@@ -363,17 +436,27 @@ function getCellProfile(cellId, customCells = getStoredCustomCells()) {
   const customCell = getCustomCell(cellId, customCells)
   if (customCell) {
     const baseProfile = CELL_PROFILES[customCell.template] ?? CELL_PROFILES.animal
+    if (customCell.reference) {
+      return {
+        ...baseProfile,
+        summary: customCell.referenceSummary,
+        comparison: `${customCell.name} is a Khronos glTF reference asset for inspecting material behavior and GLB loader compatibility, not a biological teaching model.`,
+        occurs: customCell.referenceSource,
+        organelles: baseProfile.organelles,
+      }
+    }
+
     const hasGeneratedModel = Boolean(customCell.generation?.modelUrl)
     const isCinematic = customCell.generation?.provider === 'cinematic'
     return {
       ...baseProfile,
       summary: isCinematic
-        ? `Layered transparent PNG visual from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
+        ? `Browser-generated JS depth relief from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
         : hasGeneratedModel
         ? `AI-generated GLB from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
         : `Uploaded image queued for image-to-3D generation; fallback scaffold is ${getCell(customCell.template).name}.`,
       comparison: isCinematic
-        ? 'This custom sample uses transparent PNG layers, CSS 3D depth, and mouse parallax for visual depth, not a full AI-generated mesh.'
+        ? 'This custom sample uses a browser-generated displacement mesh plus transparent depth slabs, not a GLB or full AI-generated mesh.'
         : hasGeneratedModel
         ? 'This custom sample is loaded as a real generated GLB in the WebGL viewer.'
         : `This custom sample will use the ${getCell(customCell.template).name} fallback while generation is running.`,
@@ -729,6 +812,72 @@ function createParticlePngLayer(sourceCanvas) {
   return getCanvasPngDataUrl(canvas)
 }
 
+function createImageReliefGeometry(image) {
+  const sourceWidth = Math.max(1, image?.naturalWidth || image?.width || 1)
+  const sourceHeight = Math.max(1, image?.naturalHeight || image?.height || 1)
+  const aspect = sourceWidth / sourceHeight
+  const specimenWidth = aspect >= 1 ? 3.9 : 3.9 * aspect
+  const specimenHeight = aspect >= 1 ? 3.9 / aspect : 3.9
+  const sampleScale = Math.min(1, 190 / Math.max(sourceWidth, sourceHeight))
+  const sampleWidth = Math.max(24, Math.round(sourceWidth * sampleScale))
+  const sampleHeight = Math.max(24, Math.round(sourceHeight * sampleScale))
+  const canvas = createTransparentCanvas(sampleWidth, sampleHeight)
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  context.imageSmoothingEnabled = true
+  context.imageSmoothingQuality = 'high'
+  context.drawImage(image, 0, 0, sampleWidth, sampleHeight)
+
+  const { data } = context.getImageData(0, 0, sampleWidth, sampleHeight)
+  const segmentsX = Math.max(44, Math.min(96, Math.round(sampleWidth / 3.1)))
+  const segmentsY = Math.max(44, Math.min(96, Math.round(sampleHeight / 3.1)))
+  const geometry = new THREE.PlaneGeometry(specimenWidth, specimenHeight, segmentsX, segmentsY)
+  const slabGeometry = new THREE.PlaneGeometry(specimenWidth, specimenHeight, 1, 1)
+  const positions = geometry.attributes.position
+  const uvs = geometry.attributes.uv
+
+  function sampleAlpha(x, y) {
+    const px = Math.max(0, Math.min(sampleWidth - 1, x))
+    const py = Math.max(0, Math.min(sampleHeight - 1, y))
+    return data[(py * sampleWidth + px) * 4 + 3] / 255
+  }
+
+  for (let index = 0; index < positions.count; index += 1) {
+    const u = uvs.getX(index)
+    const v = uvs.getY(index)
+    const px = Math.max(0, Math.min(sampleWidth - 1, Math.round(u * (sampleWidth - 1))))
+    const py = Math.max(0, Math.min(sampleHeight - 1, Math.round((1 - v) * (sampleHeight - 1))))
+    const dataIndex = (py * sampleWidth + px) * 4
+    const r = data[dataIndex]
+    const g = data[dataIndex + 1]
+    const b = data[dataIndex + 2]
+    const rawAlpha = data[dataIndex + 3] / 255
+    const alpha = rawAlpha < 0.16 ? 0 : clamp((rawAlpha - 0.16) / 0.84)
+    const brightness = (r + g + b) / 765
+    const saturation = (Math.max(r, g, b) - Math.min(r, g, b)) / 255
+    const radial = clamp(1 - Math.hypot((u - 0.5) / 0.57, (v - 0.52) / 0.55))
+    const neighborAlpha = Math.min(
+      sampleAlpha(px - 2, py),
+      sampleAlpha(px + 2, py),
+      sampleAlpha(px, py - 2),
+      sampleAlpha(px, py + 2),
+    )
+    const contour = clamp((alpha - neighborAlpha) * 2.4)
+    const cellularNoise = Math.sin(u * 24 + v * 13) * 0.018 + Math.sin(u * 47 - v * 29) * 0.012
+    const depth = alpha <= 0
+      ? -0.16
+      : alpha * (0.1 + radial * 0.58 + saturation * 0.22 + (1 - Math.abs(brightness - 0.58)) * 0.1 + cellularNoise) + contour * 0.2
+    positions.setZ(index, depth)
+  }
+
+  geometry.computeVertexNormals()
+
+  return {
+    aspect,
+    geometry,
+    slabGeometry,
+  }
+}
+
 async function buildLayeredPngVisual(sourceUrl) {
   const cutoutCanvas = await createCutoutCanvasFromUrl(sourceUrl)
   const aspect = cutoutCanvas.width / cutoutCanvas.height
@@ -851,7 +1000,8 @@ function getProviderPlan(provider) {
 
 function getProviderLabel(provider) {
   if (provider === 'local') return 'Local'
-  if (provider === 'cinematic') return 'Cinematic'
+  if (provider === 'cinematic') return 'JS Depth'
+  if (provider === 'reference') return 'Khronos Reference'
   return GENERATION_PROVIDER_OPTIONS.find((item) => item.id === provider)?.label ?? 'Tripo'
 }
 
@@ -1061,6 +1211,10 @@ function canUseWebGL() {
 function seeded(index) {
   const value = Math.sin(index * 12.9898 + 78.233) * 43758.5453
   return value - Math.floor(value)
+}
+
+function clamp(value, min = 0, max = 1) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function pickSpherePoint(index, radius = 1) {
@@ -1840,13 +1994,97 @@ function GeneratedGlbModel({ modelUrl, proofMode, onSelect }) {
   )
 }
 
+function CinematicReliefSpecimen({ imageUrl, autoRotate, onSelect }) {
+  const groupRef = useRef(null)
+  const sourceTexture = useTexture(imageUrl)
+  const texture = useMemo(() => {
+    const nextTexture = sourceTexture.clone()
+    nextTexture.colorSpace = THREE.SRGBColorSpace
+    nextTexture.anisotropy = 12
+    nextTexture.generateMipmaps = false
+    nextTexture.minFilter = THREE.LinearFilter
+    nextTexture.magFilter = THREE.LinearFilter
+    nextTexture.wrapS = THREE.ClampToEdgeWrapping
+    nextTexture.wrapT = THREE.ClampToEdgeWrapping
+    nextTexture.needsUpdate = true
+    return nextTexture
+  }, [sourceTexture])
+  const relief = useMemo(() => createImageReliefGeometry(sourceTexture.image), [sourceTexture.image])
+
+  useEffect(() => () => {
+    texture.dispose()
+    relief.geometry.dispose()
+    relief.slabGeometry.dispose()
+  }, [relief, texture])
+
+  useFrame((_, delta) => {
+    if (!groupRef.current) return
+    if (autoRotate) groupRef.current.rotation.y += delta * 0.22
+  })
+
+  return (
+    <group ref={groupRef} rotation={[-0.12, -0.18, 0]} onClick={(event) => {
+      event.stopPropagation()
+      onSelect('membrane')
+    }}>
+      <mesh geometry={relief.geometry} position={[0, 0, 0.18]} renderOrder={10}>
+        <meshPhysicalMaterial
+          map={texture}
+          alphaTest={0.24}
+          depthWrite
+          roughness={0.46}
+          metalness={0.02}
+          clearcoat={0.42}
+          clearcoatRoughness={0.18}
+          envMapIntensity={1.35}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
+  )
+}
+
+function CinematicReliefScene({ imageUrl, autoRotate, onSelectOrganelle }) {
+  return (
+    <Canvas
+      className="cinematic-relief-canvas"
+      camera={{ position: [0, 0.18, 5.35], fov: 34 }}
+      shadows
+      dpr={[1, 1]}
+      gl={{ antialias: true, alpha: false, preserveDrawingBuffer: true }}
+      onCreated={({ gl }) => {
+        gl.toneMapping = THREE.ACESFilmicToneMapping
+        gl.toneMappingExposure = 1.14
+      }}
+    >
+      <color attach="background" args={['#f6efdf']} />
+      <ambientLight intensity={0.84} />
+      <directionalLight castShadow position={[3.6, 4.8, 5.8]} intensity={3.8} color="#fff7e8" shadow-mapSize={[1024, 1024]} />
+      <directionalLight position={[-4.2, 2.1, 3.2]} intensity={1.55} color="#d6eef8" />
+      <pointLight position={[0.8, -2.6, 2.6]} intensity={1.3} color="#f4a6c8" />
+      <pointLight position={[-2.8, 1.2, 1.8]} intensity={0.92} color="#bde8b0" />
+      <Suspense fallback={null}>
+        <CinematicReliefSpecimen imageUrl={imageUrl} autoRotate={autoRotate} onSelect={onSelectOrganelle} />
+      </Suspense>
+      <OrbitControls enablePan={false} minDistance={3.15} maxDistance={6.2} enableDamping dampingFactor={0.08} autoRotate={autoRotate} autoRotateSpeed={0.32} />
+    </Canvas>
+  )
+}
+
 function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle, autoRotate }) {
   const [pointer, setPointer] = useState({ x: 0, y: 0 })
   const [visualState, setVisualState] = useState(null)
   const visual = visualState?.imageUrl === imageUrl ? visualState.visual : null
+  const webglAvailable = canUseWebGL()
 
   useEffect(() => {
     let cancelled = false
+
+    if (webglAvailable) {
+      return () => {
+        cancelled = true
+      }
+    }
 
     buildLayeredPngVisual(imageUrl)
       .then((nextVisual) => {
@@ -1868,9 +2106,10 @@ function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle, 
     return () => {
       cancelled = true
     }
-  }, [imageUrl])
+  }, [imageUrl, webglAvailable])
 
   function handlePointerMove(event) {
+    if (webglAvailable) return
     const rect = event.currentTarget.getBoundingClientRect()
     const x = ((event.clientX - rect.left) / rect.width - 0.5) * 2
     const y = ((event.clientY - rect.top) / rect.height - 0.5) * 2
@@ -1885,38 +2124,44 @@ function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrganelle, 
       className="cinematic-layer-scene"
       style={{ '--px': pointer.x.toFixed(3), '--py': pointer.y.toFixed(3) }}
       onPointerMove={handlePointerMove}
-      onPointerLeave={() => setPointer({ x: 0, y: 0 })}
+      onPointerLeave={() => {
+        if (!webglAvailable) setPointer({ x: 0, y: 0 })
+      }}
       onClick={() => onSelectOrganelle('membrane')}
     >
-      <div className="cinematic-depth-field" />
-      <div
-        className={`layered-png-stage ${autoRotate ? 'auto' : ''}`}
-        style={{ '--layer-aspect': visual?.aspect || 1 }}
-        aria-label="Layered transparent PNG cell visual"
-      >
-        {visual ? (
-          visual.layers.map((layer) => (
-            <img
-              key={layer.id}
-              className={`cinematic-png-layer ${layer.className}`}
-              src={layer.url}
-              alt=""
-              style={{
-                '--z': `${layer.z}px`,
-                '--shift-x': `${layer.shiftX}px`,
-                '--shift-y': `${layer.shiftY}px`,
-                '--scale': layer.scale,
-                '--layer-opacity': layer.opacity,
-              }}
-            />
-          ))
-        ) : (
-          <div className="layered-png-loading">
-            <span />
-            Building PNG layers
-          </div>
-        )}
-      </div>
+      {!webglAvailable && <div className="cinematic-depth-field" />}
+      {webglAvailable ? (
+        <CinematicReliefScene imageUrl={imageUrl} autoRotate={autoRotate} onSelectOrganelle={onSelectOrganelle} />
+      ) : (
+        <div
+          className={`layered-png-stage ${autoRotate ? 'auto' : ''}`}
+          style={{ '--layer-aspect': visual?.aspect || 1 }}
+          aria-label="Layered transparent PNG cell visual"
+        >
+          {visual ? (
+            visual.layers.map((layer) => (
+              <img
+                key={layer.id}
+                className={`cinematic-png-layer ${layer.className}`}
+                src={layer.url}
+                alt=""
+                style={{
+                  '--z': `${layer.z}px`,
+                  '--shift-x': `${layer.shiftX}px`,
+                  '--shift-y': `${layer.shiftY}px`,
+                  '--scale': layer.scale,
+                  '--layer-opacity': layer.opacity,
+                }}
+              />
+            ))
+          ) : (
+            <div className="layered-png-loading">
+              <span />
+              Building PNG layers
+            </div>
+          )}
+        </div>
+      )}
       <button type="button" className="cinematic-hotspot" style={{ '--label-color': ORGANELLES[selectedOrganelle]?.accent || '#72a4bf' }} onClick={(event) => {
         event.stopPropagation()
         onSelectOrganelle(selectedOrganelle)
@@ -2059,7 +2304,7 @@ function CellThumb({ cell, selected }) {
 }
 
 function LeftSidebar({ selectedCell, setSelectedCell, selectedOrganelle, setSelectedOrganelle, customCells }) {
-  const cells = getAllCells(customCells)
+  const cells = getPrimaryCells(customCells)
   const availableOrganelles = getAvailableOrganelleIds(selectedCell)
 
   return (
@@ -2175,10 +2420,10 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
   const generationPending = cell.custom && !generatedModelUrl && generation?.status && !['failed', 'local'].includes(generation.status)
   const generationFailed = cell.custom && !generatedModelUrl && generation?.status === 'failed'
   const stageStatusText = isCinematicCell
-    ? `Layered PNG composition · ${autoRotate ? 'Auto drift' : 'Mouse parallax'} · ${viewMode}`
+    ? `JS image relief · ${autoRotate ? 'Auto orbit' : 'Manual orbit'} · ${viewMode}`
     : `${generatedModelUrl ? `${generationProviderLabel} GLB loaded` : generationFailed ? `${generationProviderLabel} failed; source image shown` : referenceImageUrl ? `${generationProviderLabel} ${generation?.status || 'pending'}` : webglAvailable ? 'WebGL live 3D' : 'Fallback image'} · ${autoRotate || proofMode ? 'Auto rotate' : 'Manual orbit'} · ${viewMode}`
   const referenceLabel = isCinematicCell
-    ? 'Source image used for layered PNG composition'
+    ? 'Source image used for browser-side JS depth relief'
     : generatedModelUrl
     ? `Source image used for ${generationProviderLabel} 3D generation`
     : `Source image for ${generationProviderLabel} generation`
@@ -2236,7 +2481,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
 
   async function handleScreenshot() {
     const ok = isCinematicCell && referenceImageUrl
-      ? await downloadLayeredPngSnapshot(referenceImageUrl, `${selectedCell}-${selectedOrganelle}.png`)
+      ? (webglAvailable ? downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`) : await downloadLayeredPngSnapshot(referenceImageUrl, `${selectedCell}-${selectedOrganelle}.png`))
       : downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`)
     setCapturePulse(true)
     window.setTimeout(() => setCapturePulse(false), 280)
@@ -2318,7 +2563,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
         <div className="generation-overlay failed">
           <strong>3D preview unavailable</strong>
           <span>{generatedModelUrl ? 'The saved GLB could not be loaded. Showing the saved source image or fallback cell instead.' : activeViewerError}</span>
-          {cell.custom && cell.imageUrl && <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>}
+          {cell.custom && !cell.reference && cell.imageUrl && <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>}
         </div>
       )}
       <button type="button" className={proofMode ? 'proof-launcher active' : 'proof-launcher'} onClick={handleProofMode} aria-pressed={proofMode}>
@@ -2327,8 +2572,8 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       </button>
       {proofMode && (
         <div className="proof-badge">
-          <strong>{isCinematicCell ? 'LAYERED PNG DEPTH' : 'LIVE WEBGL 3D'}</strong>
-          <span>{isCinematicCell ? 'Transparent PNG layers · CSS 3D depth · mouse parallax' : generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
+          <strong>{isCinematicCell ? 'JS IMAGE RELIEF' : 'LIVE WEBGL 3D'}</strong>
+          <span>{isCinematicCell ? 'Texture displacement · transparent depth slabs · OrbitControls' : generatedModelUrl ? `${generationProviderLabel} GLB · OrbitControls · GLB export` : referenceImageUrl ? `${generationProviderLabel} task pending · fallback 3D scaffold` : 'Exploded meshes · XYZ axes · GLB export'}</span>
         </div>
       )}
       {labelVisible && (
@@ -2698,6 +2943,29 @@ function WorkspaceDrawer({
       return (
         <div className="drawer-content">
           <p className="drawer-copy">{profile.summary}</p>
+          <div className="reference-section">
+            <strong>Khronos Reference Models</strong>
+            <span>Auxiliary GLB/PBR samples for material and loader checks.</span>
+            <div className="reference-grid">
+              {KHRONOS_REFERENCE_CELLS.map((reference) => (
+                <button
+                  key={reference.id}
+                  type="button"
+                  className={selectedCell === reference.id ? 'reference-card active' : 'reference-card'}
+                  onClick={() => {
+                    onSelectCell(reference.id)
+                    onNotify(`${reference.name} reference loaded`)
+                  }}
+                >
+                  <CellThumb cell={reference} selected={selectedCell === reference.id} />
+                  <span>
+                    <strong>{reference.name}</strong>
+                    <small>{reference.referenceLicense}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="library-grid">
             {getAvailableOrganelleIds(selectedCell).map((id) => {
               const item = getOrganelleDetail(selectedCell, id)
@@ -3010,10 +3278,10 @@ function App() {
             status: 'local',
             modelUrl: '',
             rawModelUrl: '',
-            message: 'Cinematic layered PNG visual is ready.',
+            message: 'JS depth relief is ready.',
           },
         }))
-        setToast(`${customCell.name} layered PNG visual ready`)
+        setToast(`${customCell.name} JS depth visual ready`)
         return
       }
 
@@ -3139,19 +3407,19 @@ function App() {
     let customCell = null
     try {
       const requestedMode = settings.generationMode === 'local' ? 'cinematic' : settings.generationMode
-      if (settings.generationMode === 'local') setToast('Local GLB mode needs a model file; using Cinematic')
+      if (settings.generationMode === 'local') setToast('Local GLB mode needs a model file; using JS Depth')
       const { displayUrl, generationUrl } = await prepareImageForUpload(file)
       customCell = createCustomCell(file.name, displayUrl, {
         provider: requestedMode,
         requestedProvider: requestedMode,
-        type: requestedMode === 'cinematic' ? `Cinematic ${getCell(inferCellTemplate(file.name)).name}` : undefined,
+        type: requestedMode === 'cinematic' ? `JS Depth ${getCell(inferCellTemplate(file.name)).name}` : undefined,
       })
       customCell.generation = {
         ...customCell.generation,
         provider: requestedMode,
         requestedProvider: requestedMode,
         status: 'uploading',
-        message: requestedMode === 'cinematic' ? 'Building transparent PNG layers.' : 'Sending image to backend.',
+        message: requestedMode === 'cinematic' ? 'Building browser-side JS depth relief.' : 'Sending image to backend.',
       }
       const nextCustomCells = [customCell, ...customCells].slice(0, 8)
 

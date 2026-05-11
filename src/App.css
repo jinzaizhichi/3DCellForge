@@ -188,7 +188,9 @@
 .uploaded-tile,
 .drawer-row,
 .compare-card,
-.settings-row {
+.settings-row,
+.reference-section,
+.reference-card {
   border: 1px solid rgba(119, 104, 76, 0.14);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.42);
@@ -208,6 +210,8 @@
 .uploaded-tile strong,
 .drawer-row strong,
 .compare-card strong,
+.reference-section > strong,
+.reference-card strong,
 .library-card strong,
 .settings-row strong {
   display: block;
@@ -220,6 +224,7 @@
 .uploaded-tile small,
 .drawer-row > span:not(.cell-thumb) small,
 .compare-card small,
+.reference-card small,
 .library-card small,
 .settings-row small {
   display: block;
@@ -269,6 +274,40 @@
 .drawer-list {
   display: grid;
   gap: 6px;
+}
+
+.reference-section {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+}
+
+.reference-section > span {
+  color: #71675d;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.reference-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.reference-card {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  align-items: center;
+  gap: 9px;
+  min-height: 50px;
+  padding: 8px;
+  color: #4f4740;
+  text-align: left;
+  cursor: pointer;
+}
+
+.reference-card.active {
+  border-color: rgba(87, 151, 190, 0.32);
+  background: rgba(220, 238, 247, 0.82);
 }
 
 .drawer-row {
@@ -818,6 +857,14 @@
   cursor: grabbing;
 }
 
+.cinematic-relief-canvas {
+  position: absolute !important;
+  inset: 0;
+  z-index: 3;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .cinematic-depth-field {
   position: absolute;
   inset: 0;
@@ -844,9 +891,8 @@
 
 .cinematic-depth-field::after {
   inset: 4% 8%;
-  opacity: 0.5;
+  opacity: 0.28;
   transform: translate3d(calc(var(--px) * 28px), calc(var(--py) * 18px), 120px);
-  animation: relief-drift 10s ease-in-out infinite;
 }
 
 .layered-png-stage {

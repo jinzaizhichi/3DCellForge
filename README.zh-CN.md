@@ -21,6 +21,7 @@ AI 驱动的交互式 3D 细胞生成与探索工作台。
 - 支持 Hunyuan3D 本地服务作为备用生成路径。
 - 支持导入本地 `.glb` / 自包含 `.gltf` 模型。
 - 生成后的 GLB 会缓存到本地，方便后续演示和截图。
+- 内置 Khronos glTF 辅助参考模型，用于检查 GLB 加载和 PBR 材质表现。
 - API Key 只放在服务端 `.env.local`，不会暴露到前端包里。
 
 ## 技术栈
@@ -78,8 +79,8 @@ Hunyuan 只走本地 Hunyuan3D
 ```text
 Tripo       云端 GLB 生成
 Hunyuan     本地 Hunyuan3D GLB 生成
-Cinematic   从图片生成透明 PNG 分层视觉效果，适合高质感演示
-Auto        Tripo -> Hunyuan -> Cinematic 依次降级
+JS Depth    浏览器侧图片深度浮雕，WebGL 不可用时降级到透明 PNG 分层
+Auto        Tripo -> Hunyuan -> JS Depth 依次降级
 Local GLB   导入已有 .glb 或自包含 .gltf
 ```
 
@@ -119,6 +120,16 @@ public/generated-models/
 ```
 
 这些模型可以让项目在不消耗 API credits 的情况下直接用于演示。
+
+## 参考模型
+
+Library 面板内置了远程 Khronos glTF Sample Models 作为辅助参考，用于检查材质和 GLB 加载：
+
+- Transmission Test，CC0，Adobe via Khronos。
+- Transmission Roughness Test，CC-BY 4.0，Ed Mackey / Analytical Graphics via Khronos。
+- Mosquito In Amber，CC-BY 4.0，Loic Norgeot / Geoffrey Marchal / Sketchfab via Khronos。
+
+这些模型从 Khronos 已归档样例仓库远程加载，不打包进本仓库。
 
 ## 安全
 
