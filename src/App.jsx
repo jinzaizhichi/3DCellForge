@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas } from '@react-three/fiber'
 import { ContactShadows, Line, OrbitControls, RoundedBox, useGLTF, useTexture } from '@react-three/drei'
 import { motion } from 'framer-motion'
@@ -1540,6 +1540,32 @@ function ProofRig() {
   )
 }
 
+class ViewerErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error) {
+    this.props.onError?.(error)
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null })
+    }
+  }
+
+  render() {
+    if (this.state.error) return this.props.fallback
+    return this.props.children
+  }
+}
+
 function GeneratedGlbModel({ modelUrl, proofMode, onSelect }) {
   const gltf = useGLTF(modelUrl)
   const { object, scale } = useMemo(() => {
@@ -1952,6 +1978,7 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
   const [proofMode, setProofMode] = useState(false)
   const [resetNonce, setResetNonce] = useState(0)
   const [capturePulse, setCapturePulse] = useState(false)
+  const [viewerError, setViewerError] = useState(null)
   const cell = getCell(selectedCell, customCells)
   const modelCellId = cell.custom ? cell.template : selectedCell
   const referenceImageUrl = cell.custom ? cell.imageUrl : ''
@@ -1972,6 +1999,17 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
     : generatedModelUrl
     ? `Source image used for ${generationProviderLabel} 3D generation`
     : `Source image for ${generationProviderLabel} generation`
+  const viewerResetKey = `${selectedCell}-${generatedModelUrl}-${generation?.provider || 'built-in'}-${resetNonce}`
+  const activeViewerError = viewerError?.key === viewerResetKey ? viewerError.message : ''
+  const viewerFallback = (
+    <CellFallback
+      selectedCell={selectedCell}
+      modelCellId={modelCellId}
+      referenceImageUrl={referenceImageUrl}
+      selectedOrganelle={selectedOrganelle}
+      onSelectOrganelle={setSelectedOrganelle}
+    />
+  )
 
   function handleRotate() {
     const next = !autoRotate
@@ -2020,6 +2058,14 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
     onNotify(ok ? 'Screenshot downloaded' : 'Screenshot unavailable in this browser')
   }
 
+  function handleViewerError(error) {
+    console.error(error)
+    const message = error instanceof Error ? error.message : 'The saved 3D preview could not be loaded.'
+    setViewerError({ key: viewerResetKey, message })
+    onExporterReady?.(null)
+    onNotify('3D preview unavailable; fallback view shown')
+  }
+
   useEffect(() => {
     if (isCinematicCell) onExporterReady?.(null)
   }, [isCinematicCell, onExporterReady])
@@ -2034,30 +2080,32 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
       </div>
       <ViewerControls crossSection={crossSection} setCrossSection={setCrossSection} viewMode={viewMode} setViewMode={setViewMode} />
       <div className={`cell-viewer ${viewMode} ${isIsolated ? 'is-isolated' : ''} ${isCinematicCell ? 'cinematic-viewer' : ''}`}>
-        {isCinematicCell ? (
-          <CinematicLayerVisual imageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} autoRotate={autoRotate || proofMode} />
-        ) : (
-          <>
-            <CellFallback selectedCell={selectedCell} modelCellId={modelCellId} referenceImageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
-            {!generationFailed && (
-              <CellScene
-                key={`${selectedCell}-${resetNonce}`}
-                selectedCell={selectedCell}
-                modelCellId={modelCellId}
-                referenceImageUrl={referenceImageUrl}
-                generatedModelUrl={generatedModelUrl}
-                selectedOrganelle={selectedOrganelle}
-                crossSection={crossSection}
-                autoRotate={autoRotate}
-                hideOthers={hideOthers}
-                proofMode={proofMode}
-                renderQuality={renderQuality}
-                onSelectOrganelle={setSelectedOrganelle}
-                onExporterReady={onExporterReady}
-              />
-            )}
-          </>
-        )}
+        <ViewerErrorBoundary resetKey={viewerResetKey} onError={handleViewerError} fallback={viewerFallback}>
+          {isCinematicCell ? (
+            <CinematicLayerVisual imageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} autoRotate={autoRotate || proofMode} />
+          ) : (
+            <>
+              <CellFallback selectedCell={selectedCell} modelCellId={modelCellId} referenceImageUrl={referenceImageUrl} selectedOrganelle={selectedOrganelle} onSelectOrganelle={setSelectedOrganelle} />
+              {!generationFailed && (
+                <CellScene
+                  key={`${selectedCell}-${resetNonce}`}
+                  selectedCell={selectedCell}
+                  modelCellId={modelCellId}
+                  referenceImageUrl={referenceImageUrl}
+                  generatedModelUrl={generatedModelUrl}
+                  selectedOrganelle={selectedOrganelle}
+                  crossSection={crossSection}
+                  autoRotate={autoRotate}
+                  hideOthers={hideOthers}
+                  proofMode={proofMode}
+                  renderQuality={renderQuality}
+                  onSelectOrganelle={setSelectedOrganelle}
+                  onExporterReady={onExporterReady}
+                />
+              )}
+            </>
+          )}
+        </ViewerErrorBoundary>
       </div>
       {referenceImageUrl && (
         <div className="custom-reference-layer">
@@ -2079,6 +2127,13 @@ function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, cr
           <strong>{generationFailureTitle}</strong>
           <span>{generation.message || 'The saved upload failed before a GLB was returned.'}</span>
           <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>
+        </div>
+      )}
+      {activeViewerError && !generationFailed && (
+        <div className="generation-overlay failed">
+          <strong>3D preview unavailable</strong>
+          <span>{generatedModelUrl ? 'The saved GLB could not be loaded. Showing the saved source image or fallback cell instead.' : activeViewerError}</span>
+          {cell.custom && cell.imageUrl && <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>}
         </div>
       )}
       <button type="button" className={proofMode ? 'proof-launcher active' : 'proof-launcher'} onClick={handleProofMode} aria-pressed={proofMode}>
