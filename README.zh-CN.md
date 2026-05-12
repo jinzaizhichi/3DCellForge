@@ -56,6 +56,7 @@ cp .env.example .env.local
 
 ```bash
 TRIPO_API_KEY=your_tripo_key
+API_HOST=127.0.0.1
 ```
 
 如需启用 Hunyuan3D 本地备用模式，先启动你的 Hunyuan3D API 服务，再设置：

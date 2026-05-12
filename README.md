@@ -55,6 +55,7 @@ Then set:
 
 ```bash
 TRIPO_API_KEY=your_tripo_key
+API_HOST=127.0.0.1
 ```
 
 For Hunyuan3D local backup mode, start your local Hunyuan3D API server and set:
