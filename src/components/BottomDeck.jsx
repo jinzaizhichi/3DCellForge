@@ -1,11 +1,10 @@
 import { useRef } from 'react'
-import { Box, Image } from 'lucide-react'
+import { Box, Image, Upload } from 'lucide-react'
 
 import { GENERATION_MODE_OPTIONS } from '../config/appConfig.js'
 import { MICROSCOPE_IMAGES } from '../domain/cellData.js'
 import { getCell } from '../domain/cellCatalog.js'
 import { CellThumb } from './CellThumb.jsx'
-import { GenerationTaskCenter } from './GenerationTaskCenter.jsx'
 
 export function BottomDeck({
   selectedCell,
@@ -16,10 +15,10 @@ export function BottomDeck({
   onGenerationModeChange,
   compareCell,
   customCells,
+  latestUploadCell,
   onUploadImage,
   onCompare,
   onOpenGenerationCell,
-  onRetryGeneration,
   onNotify,
 }) {
   const fileInputRef = useRef(null)
@@ -36,11 +35,11 @@ export function BottomDeck({
     <section className="bottom-deck">
       <div className="panel media-panel">
         <header className="panel-title">
-          <span>Microscope View</span>
-          <small>3</small>
+          <span>Asset Source</span>
+          <small>{latestUploadCell ? 5 : 4}</small>
         </header>
         <div className="generation-mode-row">
-          <span>Generate Mode</span>
+          <span>Provider</span>
           <div className="generation-mode-pills">
             {GENERATION_MODE_OPTIONS.map((mode) => (
               <button
@@ -70,15 +69,33 @@ export function BottomDeck({
               <small>{item.label}</small>
             </button>
           ))}
-          <button
-            type="button"
-            className={uploadedImage ? `add-image active ${uploadedImage.url ? 'with-preview' : 'with-model'}` : 'add-image'}
-            style={uploadedImage?.url ? { '--upload-preview': `url(${uploadedImage.url})` } : undefined}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploadedImage?.url ? <Image size={16} /> : <Box size={16} />}
-            {uploadedImage?.name || 'Add Image / GLB'}
-          </button>
+          {latestUploadCell ? (
+            <>
+              <button
+                type="button"
+                className={uploadedImage ? `add-image active ${uploadedImage.url ? 'with-preview' : 'with-model'}` : 'add-image active with-model'}
+                style={uploadedImage?.url ? { '--upload-preview': `url(${uploadedImage.url})` } : undefined}
+                onClick={() => onOpenGenerationCell(latestUploadCell.id)}
+                title="Open latest uploaded model"
+              >
+                {uploadedImage?.url ? <Image size={16} /> : <Box size={16} />}
+                {latestUploadCell.name || uploadedImage?.name || 'Latest Upload'}
+              </button>
+              <button type="button" className="add-image upload-new" onClick={() => fileInputRef.current?.click()} title="Upload a new image or GLB">
+                <Upload size={16} />
+                New Upload
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              className="add-image"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload size={16} />
+              Add Image / GLB
+            </button>
+          )}
           <input
             ref={fileInputRef}
             className="hidden-file-input"
@@ -96,7 +113,7 @@ export function BottomDeck({
 
       <div className="panel compare-panel">
         <header className="panel-title">
-          <span>Compare Cells</span>
+          <span>Compare Models</span>
           <small>2</small>
         </header>
         <button type="button" className="compare-box" onClick={() => onCompare(compareTarget.id)}>
@@ -114,12 +131,6 @@ export function BottomDeck({
         </button>
       </div>
 
-      <GenerationTaskCenter
-        customCells={customCells}
-        selectedCell={selectedCell}
-        onOpenCell={onOpenGenerationCell}
-        onRetryGeneration={onRetryGeneration}
-      />
     </section>
   )
 }

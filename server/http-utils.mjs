@@ -6,6 +6,24 @@ export function setCorsHeaders(response) {
   response.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization')
 }
 
+export function assertLocalDiagnosticsRequest(request) {
+  const remoteAddress = normalizeAddress(request.socket?.remoteAddress)
+  const origin = request.headers.origin
+  const referer = request.headers.referer
+
+  if (!isLocalHost(remoteAddress)) {
+    throw Object.assign(new Error('Diagnostics logs are only available from this machine.'), { status: 403 })
+  }
+
+  if (origin && !isLocalUrl(origin)) {
+    throw Object.assign(new Error('Diagnostics logs are only available to localhost pages.'), { status: 403 })
+  }
+
+  if (!origin && referer && !isLocalUrl(referer)) {
+    throw Object.assign(new Error('Diagnostics logs are only available to localhost pages.'), { status: 403 })
+  }
+}
+
 export function sendJson(response, status, payload) {
   response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
   response.end(JSON.stringify(payload))
@@ -86,4 +104,21 @@ export function parseDataUrl(dataUrl) {
 export function sanitizeFileName(fileName) {
   const baseName = String(fileName).split(/[\\/]/).pop() || ''
   return baseName.replace(/[^\w.\- ]+/g, '').replace(/^\.+/, '').trim() || 'cell-reference.png'
+}
+
+function normalizeAddress(address = '') {
+  return String(address).replace(/^::ffff:/, '')
+}
+
+function isLocalHost(hostname = '') {
+  const normalized = String(hostname).toLowerCase()
+  return normalized === 'localhost' || normalized === '127.0.0.1' || normalized === '::1'
+}
+
+function isLocalUrl(value) {
+  try {
+    return isLocalHost(new URL(value).hostname)
+  } catch {
+    return false
+  }
 }

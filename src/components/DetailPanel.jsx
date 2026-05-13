@@ -17,7 +17,7 @@ export function DetailPanel({ selectedCell, selectedOrganelle, favoriteKey, setF
     <aside className="right-rail">
       <section className="panel detail-panel">
         <header className="detail-title">
-          <span>Organelle Details</span>
+          <span>Part Details</span>
           <button type="button" className={isFavorite ? 'detail-fav active' : 'detail-fav'} onClick={toggleFavorite} aria-pressed={isFavorite}>
             <Heart size={15} fill={isFavorite ? 'currentColor' : 'none'} />
           </button>
@@ -36,15 +36,15 @@ export function DetailPanel({ selectedCell, selectedOrganelle, favoriteKey, setF
         </div>
         <dl className="detail-grid">
           <div>
-            <dt>Size</dt>
+            <dt>Scale</dt>
             <dd>{detail.size}</dd>
           </div>
           <div>
-            <dt>Location</dt>
+            <dt>Position</dt>
             <dd>{detail.location}</dd>
           </div>
           <div>
-            <dt>Visible in LM</dt>
+            <dt>Visibility</dt>
             <dd>{detail.visible}</dd>
           </div>
           <div>
@@ -58,10 +58,10 @@ export function DetailPanel({ selectedCell, selectedOrganelle, favoriteKey, setF
 
       <section className="panel notes-panel">
         <header className="panel-title">
-          <span>Biological Notes</span>
+          <span>Model Notes</span>
         </header>
         <p>{detail.note}</p>
-        <blockquote>{detail.funFact ?? 'Some white blood cells can change shape to squeeze between blood vessel walls and reach infected tissue.'}</blockquote>
+        <blockquote>{detail.funFact ?? 'Use this panel for inspection notes, demo narration, and model-quality checks.'}</blockquote>
       </section>
     </aside>
   )

@@ -1,25 +1,26 @@
-# 3DCellForge
+# 3D Model Studio
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-AI-powered interactive 3D cell generation and exploration studio.
+AI-powered interactive 3D model generation, inspection, and presentation studio.
 
-3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, a left-cell / center-stage / right-tools workbench, screenshots, GLB export, collapsed upload history, demo presentation mode, a generation task center, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
+3D Model Studio is a React + Three.js prototype for turning uploaded reference images or GLB files into a polished interactive 3D workspace. It supports live WebGL orbit controls, a left model library / center stage / right tools workbench, screenshots, GLB export, collapsed upload history, demo presentation mode, a generation queue, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
 
 ## Demo
 
-[![3DCellForge demo](docs/demo/3DCellForge-demo-cover.jpg)](docs/demo/3DCellForge-demo-2026-05-10.mp4)
+[![3D Model Studio demo](docs/demo/3DCellForge-demo-cover.jpg)](docs/demo/3DCellForge-demo-2026-05-10.mp4)
 
-Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-demo-2026-05-10.mp4)
+Open the demo video: [Demo MP4](docs/demo/3DCellForge-demo-2026-05-10.mp4)
 
 ## Features
 
-- Interactive cell viewer built with React Three Fiber.
-- Three-column workbench: Cell Types on the left, WebGL stage in the center, microscope/generation tools on the right.
-- Drag to rotate, scroll to zoom, isolate structures, inspect organelles, and export the current scene.
+- Interactive model viewer built with React Three Fiber.
+- Three-column workbench: Model Library on the left, WebGL stage in the center, asset/generation tools on the right.
+- Drag to rotate, scroll to zoom, isolate structure parts, inspect model details, and export the current scene.
 - Demo Mode for screenshots and screen recordings: hides side panels and keeps the model stage clean.
-- Recent Uploads stays collapsed by default, with delete controls for custom generated/imported cells.
-- Organelle detail drawer, microscope references, comparison panel, notes, gallery actions, and a compact generation task center.
+- Older Uploads stays collapsed by default, while the latest uploaded model stays pinned and clickable.
+- Generated/imported models are restored after refresh through IndexedDB, with localStorage as a compact fallback.
+- Part detail drawer, asset references, comparison panel, notes, gallery actions, logs, saved projects, and a compact generation queue.
 - Hyper3D, Tripo, Fal.ai, Hunyuan3D, JS Depth, and Local GLB generation/import modes.
 - Cached demo GLB models for offline-friendly screenshots and demos.
 - Auxiliary Khronos glTF reference models for GLB loader and PBR material checks.
@@ -50,11 +51,11 @@ Open the Vite URL shown in the terminal.
 
 The default screen is intentionally quiet:
 
-- Pick official cells from the left `Cell Types` rail.
-- Uploaded/generated/custom cells are tucked under `Recent Uploads` until expanded.
-- Use the right `Microscope View` rail to choose the generation provider or import a local `.glb` / `.gltf`.
-- Watch upload/generation/import state in the right `Generation Tasks` panel.
-- Click `Info` or `Inspect` only when you need the organelle detail drawer.
+- Pick your latest upload or saved generated models from the left `Model Library` rail.
+- Older uploaded/generated/imported models are tucked under `Older Uploads` until expanded.
+- Use the right `Asset Source` rail to choose the generation provider or import a local `.glb` / `.gltf`.
+- Watch upload/generation/import state in the left `Generation Queue` panel.
+- Click `Info` or `Inspect` only when you need the part detail drawer.
 - Click `Demo` in the top navigation to enter a clean presentation mode for screenshots and recordings.
 
 Useful validation commands:
@@ -116,8 +117,9 @@ Tripo uploads use the current STS object-storage flow (`/upload/sts/token`) befo
 Fal uploads use the official `@fal-ai/client` storage and queue APIs. Supported Fal models are Hunyuan3D v2, TRELLIS, TripoSR, Tripo3D v2.5, and Hyper3D Rodin. Pick the active Fal model in `Settings`.
 Rodin uploads use Hyper3D's multipart `/rodin` task API, then poll `/status` and cache the GLB returned by `/download`.
 Generated GLBs are cached by the Node backend under `.generated-models/`, so later views use the local copy instead of temporary provider URLs.
+The frontend model library is saved in IndexedDB, so successful generated/imported model records survive page refreshes.
 
-You can also import a local `.glb` or self-contained `.gltf` from the Microscope View add button. Imported models become custom Cell Types and are served from the same local cache.
+You can also import a local `.glb` or self-contained `.gltf` from the `New Upload` button. Imported models become custom workspace models and are served from the same local cache.
 
 Expected Hunyuan3D local API shape:
 

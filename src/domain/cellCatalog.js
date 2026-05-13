@@ -57,17 +57,17 @@ export function getCellProfile(cellId, customCells = getStoredCustomCells()) {
     return {
       ...baseProfile,
       summary: isCinematic
-        ? `Browser-generated JS depth relief from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
+        ? 'Browser-generated JS depth relief from the uploaded image. This is a visual fallback, not a real GLB mesh.'
         : hasGeneratedModel
-        ? `AI-generated GLB from the uploaded image, using ${getCell(customCell.template).name} biology as context.`
-        : `Uploaded image queued for image-to-3D generation; fallback scaffold is ${getCell(customCell.template).name}.`,
+        ? 'AI-generated GLB from the uploaded image, loaded as an interactive WebGL model.'
+        : `Uploaded image queued for image-to-3D generation; ${getCell(customCell.template).name} is only the temporary fallback scaffold.`,
       comparison: isCinematic
         ? 'This custom sample uses a browser-generated displacement mesh plus transparent depth slabs, not a GLB or full AI-generated mesh.'
         : hasGeneratedModel
         ? 'This custom sample is loaded as a real generated GLB in the WebGL viewer.'
         : `This custom sample will use the ${getCell(customCell.template).name} fallback while generation is running.`,
-      occurs: 'Uploaded by user as a custom microscope reference.',
-      organelles: baseProfile.organelles,
+      occurs: 'Uploaded by the user as a custom 3D model source.',
+      organelles: ORGANELLE_ORDER,
     }
   }
 
@@ -85,21 +85,21 @@ export function getDefaultOrganelle(cellId, customCells = getStoredCustomCells()
 }
 
 export function getOrganelleDetail(cellId, organelleId, customCells = getStoredCustomCells()) {
-  const detailCellId = getCustomCell(cellId, customCells)?.template ?? cellId
+  const customCell = getCustomCell(cellId, customCells)
+  const detailCellId = customCell ? null : cellId
 
   return {
     ...ORGANELLES[organelleId],
-    ...(CELL_DETAIL_OVERRIDES[detailCellId]?.[organelleId] ?? {}),
+    ...(detailCellId ? CELL_DETAIL_OVERRIDES[detailCellId]?.[organelleId] ?? {} : {}),
   }
 }
 
 export function getGenerationPrompt(cell) {
-  const base = getCell(cell.template)
   return [
-    `A high quality educational 3D biological model of a ${base.name}.`,
-    'Make it a single integrated specimen, not a flat relief, not a display base.',
-    'Preserve the recognizable major biological structures and use clean PBR materials.',
-    'Style: polished interactive science app, clear organelles, soft studio lighting.',
+    `A high quality 3D model generated from the uploaded reference image named ${cell.name}.`,
+    'Make it a single integrated object, not a flat relief, not a display base.',
+    'Preserve the recognizable silhouette, major volumes, surface details, and material separation.',
+    'Style: polished interactive 3D studio asset, clean PBR materials, soft studio lighting.',
   ].join(' ')
 }
 
@@ -129,17 +129,18 @@ export function isLocalModelFile(file) {
 export function createCustomCell(fileName, imageUrl, options = {}) {
   const template = inferCellTemplate(fileName)
   const base = getCell(template)
-  const name = cleanFileName(fileName) || 'Uploaded Cell'
+  const name = cleanFileName(fileName) || 'Uploaded Model'
   const provider = options.provider || 'tripo'
 
   return {
-    id: `custom-${Date.now()}`,
+    id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     name: name.length > 20 ? `${name.slice(0, 20)}...` : name,
-    type: options.type || `Uploaded ${base.name}`,
+    type: options.type || `Uploaded 3D Model · ${base.name} fallback`,
     accent: base.accent,
     custom: true,
     template,
     imageUrl,
+    thumbnailUrl: options.thumbnailUrl || '',
     generation: {
       provider,
       requestedProvider: options.requestedProvider || provider,
@@ -155,5 +156,5 @@ export function createCustomCell(fileName, imageUrl, options = {}) {
 export function getUploadPreviewFromCustomCells(customCells) {
   const latest = customCells.find((cell) => cell.custom)
   if (!latest) return null
-  return { name: latest.name, url: latest.imageUrl || '' }
+  return { name: latest.name, url: latest.imageUrl || latest.thumbnailUrl || '' }
 }

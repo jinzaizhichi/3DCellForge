@@ -1,9 +1,31 @@
-import { BookOpen, ChevronDown, Dna, Grid3X3, Library, MonitorPlay, Settings } from 'lucide-react'
+import { BookOpen, Box, ChevronDown, Grid3X3, Library, MonitorPlay, ScrollText, Settings } from 'lucide-react'
 
-import { CELL_TYPES } from '../domain/cellData.js'
-import { CellThumb } from './CellThumb.jsx'
+const HEADER_TEXT = {
+  en: {
+    title: '3D Model Studio',
+    subtitle: 'Generate, inspect, and present 3D assets',
+    Gallery: 'Gallery',
+    Library: 'Library',
+    Notebooks: 'Notebooks',
+    Logs: 'Logs',
+    Settings: 'Settings',
+    Demo: 'Demo',
+  },
+  zh: {
+    title: '3D模型工作室',
+    subtitle: '生成、检查和演示3D模型',
+    Gallery: '作品集',
+    Library: '模型库',
+    Notebooks: '笔记',
+    Logs: '日志',
+    Settings: '设置',
+    Demo: '演示',
+  },
+}
 
-export function StudioHeader({ activePanel, setActivePanel, demoMode, onToggleDemoMode, onNotify }) {
+export function StudioHeader({ activePanel, setActivePanel, demoMode, language = 'en', onToggleDemoMode, onNotify }) {
+  const text = HEADER_TEXT[language] || HEADER_TEXT.en
+
   function openPanel(panel) {
     const next = activePanel === panel ? null : panel
     setActivePanel(next)
@@ -14,37 +36,41 @@ export function StudioHeader({ activePanel, setActivePanel, demoMode, onToggleDe
     <header className="studio-header">
       <div className="studio-brand">
         <div className="brand-mark">
-          <CellThumb cell={CELL_TYPES[1]} selected />
+          <Box size={30} />
         </div>
         <div>
-          <strong>Cell Architecture Studio</strong>
-          <span>Explore life at the microscopic level</span>
+          <strong>{text.title}</strong>
+          <span>{text.subtitle}</span>
         </div>
       </div>
       <nav className="studio-nav">
         <button type="button" className={activePanel === 'Gallery' ? 'active' : ''} onClick={() => openPanel('Gallery')}>
           <Grid3X3 size={15} />
-          Gallery
+          {text.Gallery}
         </button>
         <button type="button" className={activePanel === 'Library' ? 'active' : ''} onClick={() => openPanel('Library')}>
           <Library size={15} />
-          Library
+          {text.Library}
         </button>
         <button type="button" className={activePanel === 'Notebooks' ? 'active' : ''} onClick={() => openPanel('Notebooks')}>
           <BookOpen size={15} />
-          Notebooks
+          {text.Notebooks}
+        </button>
+        <button type="button" className={activePanel === 'Logs' ? 'active' : ''} onClick={() => openPanel('Logs')}>
+          <ScrollText size={15} />
+          {text.Logs}
         </button>
         <button type="button" className={activePanel === 'Settings' ? 'active' : ''} onClick={() => openPanel('Settings')}>
           <Settings size={15} />
-          Settings
+          {text.Settings}
         </button>
         <button type="button" className={demoMode ? 'active' : ''} onClick={onToggleDemoMode}>
           <MonitorPlay size={15} />
-          Demo
+          {text.Demo}
         </button>
       </nav>
       <button type="button" className={activePanel === 'Profile' ? 'profile-button active' : 'profile-button'} onClick={() => openPanel('Profile')}>
-        <Dna size={18} />
+        <Box size={18} />
         <ChevronDown size={13} />
       </button>
     </header>

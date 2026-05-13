@@ -57,6 +57,16 @@ export async function uploadLocal3dModel(file) {
   return readApiResponse(response)
 }
 
+export async function get3dApiHealth() {
+  const response = await fetch(apiUrl('/api/3d/health'))
+  return readApiResponse(response)
+}
+
+export async function get3dServerLogs(limit = 100) {
+  const response = await fetch(apiUrl(`/api/3d/logs?limit=${encodeURIComponent(limit)}`))
+  return readApiResponse(response)
+}
+
 export async function get3dGenerationStatus(taskId, provider) {
   const response = await fetch(apiUrl(`/api/3d/status/${encodeURIComponent(taskId)}?provider=${encodeURIComponent(provider || 'rodin')}`))
   return readApiResponse(response)

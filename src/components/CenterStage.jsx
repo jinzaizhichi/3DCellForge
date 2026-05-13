@@ -42,7 +42,23 @@ function ViewerControls({ crossSection, setCrossSection, viewMode, setViewMode }
   )
 }
 
-export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrganelle, crossSection, setCrossSection, renderQuality, customCells, onNotify, onExport, onExporterReady, onRetryGeneration, onOpenInspector }) {
+export function CenterStage({
+  selectedCell,
+  selectedOrganelle,
+  setSelectedOrganelle,
+  crossSection,
+  setCrossSection,
+  renderQuality,
+  screenshotScale = 1,
+  customCells,
+  onNotify,
+  onExport,
+  exportAvailable,
+  exportReason,
+  onExporterReady,
+  onRetryGeneration,
+  onOpenInspector,
+}) {
   const [viewMode, setViewMode] = useState('layers')
   const [autoRotate, setAutoRotate] = useState(false)
   const [isIsolated, setIsIsolated] = useState(false)
@@ -53,7 +69,7 @@ export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrgane
   const [viewerError, setViewerError] = useState(null)
   const cell = getCell(selectedCell, customCells)
   const modelCellId = cell.custom ? cell.template : selectedCell
-  const referenceImageUrl = cell.custom ? cell.imageUrl : ''
+  const referenceImageUrl = cell.custom ? cell.imageUrl || cell.thumbnailUrl || '' : ''
   const generatedModelUrl = getGeneratedModelUrl(cell)
   const generation = cell.custom ? cell.generation : null
   const generationProviderLabel = getProviderLabel(generation?.provider)
@@ -99,7 +115,7 @@ export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrgane
   function handleHideOthers() {
     const next = !hideOthers
     setHideOthers(next)
-    onNotify(next ? `Showing ${detail.title} with cell shell` : 'All structures visible')
+    onNotify(next ? `Showing ${detail.title} with model shell` : 'All structures visible')
   }
 
   function handleResetView() {
@@ -126,8 +142,8 @@ export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrgane
 
   async function handleScreenshot() {
     const ok = isCinematicCell && referenceImageUrl
-      ? (webglAvailable ? downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`) : await downloadLayeredPngSnapshot(referenceImageUrl, `${selectedCell}-${selectedOrganelle}.png`))
-      : downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`)
+      ? (webglAvailable ? downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`, screenshotScale) : await downloadLayeredPngSnapshot(referenceImageUrl, `${selectedCell}-${selectedOrganelle}.png`))
+      : downloadCanvasImage(`${selectedCell}-${selectedOrganelle}.png`, screenshotScale)
     setCapturePulse(true)
     window.setTimeout(() => setCapturePulse(false), 280)
     onNotify(ok ? 'Screenshot downloaded' : 'Screenshot unavailable in this browser')
@@ -207,7 +223,7 @@ export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrgane
       {activeViewerError && !generationFailed && (
         <div className="generation-overlay failed">
           <strong>3D preview unavailable</strong>
-          <span>{generatedModelUrl ? 'The saved GLB could not be loaded. Showing the saved source image or fallback cell instead.' : activeViewerError}</span>
+          <span>{generatedModelUrl ? 'The saved GLB could not be loaded. Showing the saved source image or fallback model instead.' : activeViewerError}</span>
           {cell.custom && !cell.reference && cell.imageUrl && <button type="button" onClick={() => onRetryGeneration?.(cell.id)}>Retry Generation</button>}
         </div>
       )}
@@ -241,7 +257,7 @@ export function CenterStage({ selectedCell, selectedOrganelle, setSelectedOrgane
           <Camera size={14} />
           Screenshot
         </button>
-        <button type="button" onClick={onExport}>
+        <button type="button" onClick={onExport} disabled={!exportAvailable} title={exportReason}>
           <Upload size={14} />
           3D Export
         </button>

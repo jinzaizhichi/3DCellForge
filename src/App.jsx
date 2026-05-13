@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Info, X } from 'lucide-react'
 import {
   CUSTOM_CELL_STORAGE_KEY,
   DEFAULT_SETTINGS,
+  GALLERY_STORAGE_KEY,
+  GENERATION_HISTORY_STORAGE_KEY,
+  NOTES_STORAGE_KEY,
   SETTINGS_STORAGE_KEY,
   UI_STATE_STORAGE_KEY,
   UI_STATE_STORAGE_VERSION,
@@ -24,10 +27,12 @@ import {
 } from './domain/cellCatalog.js'
 import { persistCustomCells } from './domain/cellPersistence.js'
 import { normalizeSettings, normalizeUiState } from './domain/preferences.js'
-import { downloadBlob, downloadJson } from './lib/downloads.js'
-import { prepareImageForUpload } from './lib/imagePipeline.js'
+import { downloadBlob, downloadJson, downloadText, getCanvasImageDataUrl } from './lib/downloads.js'
+import { createImageThumbnailDataUrl, prepareImageForUpload } from './lib/imagePipeline.js'
+import { listStoredModels, saveStoredModels } from './lib/modelStore.js'
+import { deleteProject, listProjects, loadProject, saveProject } from './lib/projectStore.js'
 import { loadStoredValue, storeValue } from './lib/storage.js'
-import { create3dGeneration, getProviderLabel, getProviderPlan, uploadLocal3dModel, waitFor3dModel } from './services/modelApi.js'
+import { create3dGeneration, get3dApiHealth, get3dServerLogs, getProviderLabel, getProviderPlan, uploadLocal3dModel, waitFor3dModel } from './services/modelApi.js'
 import { BottomDeck } from './components/BottomDeck.jsx'
 import { CenterStage } from './components/CenterStage.jsx'
 import { DetailPanel } from './components/DetailPanel.jsx'
@@ -36,6 +41,46 @@ import { StatusToast } from './components/StatusToast.jsx'
 import { StudioHeader } from './components/StudioHeader.jsx'
 import { WorkspaceDrawer } from './components/WorkspaceDrawer.jsx'
 import './App.css'
+
+function mergeCustomModelRecords(primary = [], secondary = []) {
+  const order = []
+  const byId = new Map()
+
+  for (const cell of [...primary, ...secondary]) {
+    if (!cell?.id) continue
+    const existing = byId.get(cell.id)
+    if (!existing) order.push(cell.id)
+
+    byId.set(cell.id, mergeCustomModelRecord(existing, cell))
+  }
+
+  return order.map((id) => byId.get(id)).filter(Boolean)
+}
+
+function mergeCustomModelRecord(existing, next) {
+  if (!existing) return next
+
+  const existingGeneration = existing.generation || {}
+  const nextGeneration = next.generation || {}
+  const existingStatus = String(existingGeneration.status || '').toLowerCase()
+  const canFillGeneratedAsset = !existingStatus || existingStatus === 'success' || existingStatus === 'local'
+
+  return {
+    ...next,
+    ...existing,
+    imageUrl: existing.imageUrl || next.imageUrl || '',
+    generation: {
+      ...nextGeneration,
+      ...existingGeneration,
+      modelUrl: existingGeneration.modelUrl || (canFillGeneratedAsset ? nextGeneration.modelUrl || '' : ''),
+      rawModelUrl: existingGeneration.rawModelUrl || (canFillGeneratedAsset ? nextGeneration.rawModelUrl || '' : ''),
+      taskId: existingGeneration.taskId || nextGeneration.taskId || '',
+    },
+    thumbnailUrl: existing.thumbnailUrl || next.thumbnailUrl || '',
+    savedAt: existing.savedAt || next.savedAt,
+    updatedAt: existing.updatedAt || next.updatedAt,
+  }
+}
 
 function App() {
   const initialCustomCellsRef = useRef(loadStoredValue(CUSTOM_CELL_STORAGE_KEY, []))
@@ -47,23 +92,59 @@ function App() {
   const [activePanel, setActivePanel] = useState(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [demoMode, setDemoMode] = useState(false)
-  const [toast, setToast] = useState('Plant cell ready')
+  const [toast, setToast] = useState('3D Model Studio ready')
   const [favoriteKey, setFavoriteKey] = useState(() => initialUiStateRef.current.favoriteKey)
   const [selectedMicroscope, setSelectedMicroscope] = useState(() => initialUiStateRef.current.selectedMicroscope)
   const [uploadedImage, setUploadedImage] = useState(() => getUploadPreviewFromCustomCells(initialCustomCellsRef.current))
   const [sceneExporter, setSceneExporter] = useState(null)
   const [compareCell, setCompareCell] = useState(() => initialUiStateRef.current.compareCell)
-  const [galleryItems, setGalleryItems] = useState(() => loadStoredValue('bio-demo-gallery', []))
-  const [notes, setNotes] = useState(() => loadStoredValue('bio-demo-notes', {}))
+  const [galleryItems, setGalleryItems] = useState(() => loadStoredValue(GALLERY_STORAGE_KEY, []))
+  const [generationHistory, setGenerationHistory] = useState(() => loadStoredValue(GENERATION_HISTORY_STORAGE_KEY, []))
+  const [notes, setNotes] = useState(() => loadStoredValue(NOTES_STORAGE_KEY, {}))
   const [settings, setSettings] = useState(() => normalizeSettings(loadStoredValue(SETTINGS_STORAGE_KEY, DEFAULT_SETTINGS)))
+  const [apiHealth, setApiHealth] = useState(null)
+  const [serverLogs, setServerLogs] = useState({ entries: [], file: '', size: 0 })
+  const [projects, setProjects] = useState([])
+  const [modelLibraryHydrated, setModelLibraryHydrated] = useState(false)
   const allCells = useMemo(() => getAllCells(customCells), [customCells])
+  const latestUploadCell = useMemo(() => customCells.find((cell) => cell.custom && !cell.reference), [customCells])
+  const refreshApiHealth = useCallback(async () => {
+    try {
+      const health = await get3dApiHealth()
+      setApiHealth({ ok: true, checkedAt: new Date().toISOString(), ...health })
+    } catch (error) {
+      setApiHealth({
+        ok: false,
+        checkedAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'API health check failed.',
+      })
+    }
+  }, [])
+  const refreshServerLogs = useCallback(async () => {
+    try {
+      const logs = await get3dServerLogs(100)
+      setServerLogs({ ...logs, checkedAt: new Date().toISOString(), error: '' })
+    } catch (error) {
+      setServerLogs({
+        entries: [],
+        file: '',
+        size: 0,
+        checkedAt: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'Server logs could not be loaded.',
+      })
+    }
+  }, [])
 
   useEffect(() => {
-    storeValue('bio-demo-gallery', galleryItems)
+    storeValue(GALLERY_STORAGE_KEY, galleryItems)
   }, [galleryItems])
 
   useEffect(() => {
-    storeValue('bio-demo-notes', notes)
+    storeValue(GENERATION_HISTORY_STORAGE_KEY, generationHistory)
+  }, [generationHistory])
+
+  useEffect(() => {
+    storeValue(NOTES_STORAGE_KEY, notes)
   }, [notes])
 
   useEffect(() => {
@@ -71,12 +152,40 @@ function App() {
   }, [settings])
 
   useEffect(() => {
-    const persisted = persistCustomCells(customCells)
-    if (persisted.cells !== customCells) {
-      setCustomCells(persisted.cells)
-      setUploadedImage(getUploadPreviewFromCustomCells(persisted.cells))
-    }
+    persistCustomCells(customCells)
   }, [customCells])
+
+  useEffect(() => {
+    let cancelled = false
+
+    listStoredModels()
+      .then((storedModels) => {
+        if (cancelled) return
+
+        if (storedModels.length > 0) {
+          setCustomCells((current) => {
+            const merged = mergeCustomModelRecords(current, storedModels)
+            persistCustomCells(merged)
+            return merged
+          })
+          setUploadedImage((current) => current || getUploadPreviewFromCustomCells(storedModels))
+        }
+
+        setModelLibraryHydrated(true)
+      })
+      .catch(() => {
+        if (!cancelled) setModelLibraryHydrated(true)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!modelLibraryHydrated) return
+    saveStoredModels(customCells)
+  }, [customCells, modelLibraryHydrated])
 
   useEffect(() => {
     storeValue(UI_STATE_STORAGE_KEY, {
@@ -92,18 +201,48 @@ function App() {
 
   useEffect(() => {
     if (activePanel) setInspectorOpen(false)
-  }, [activePanel])
+    if (activePanel === 'Settings') refreshApiHealth()
+    if (activePanel === 'Logs') {
+      refreshApiHealth()
+      refreshServerLogs()
+    }
+  }, [activePanel, refreshApiHealth, refreshServerLogs])
 
   useEffect(() => {
     if (!uploadedImage) setUploadedImage(getUploadPreviewFromCustomCells(customCells))
   }, [customCells, uploadedImage])
 
   useEffect(() => {
+    listProjects()
+      .then(setProjects)
+      .catch(() => setProjects([]))
+  }, [])
+
+  useEffect(() => {
+    if (!demoMode) return undefined
+
+    const presentationCells = allCells.filter((cell) => !cell.reference).slice(0, 7)
+    if (presentationCells.length === 0) return undefined
+    let index = Math.max(0, presentationCells.findIndex((cell) => cell.id === selectedCell))
+
+    const timer = window.setInterval(() => {
+      index = (index + 1) % presentationCells.length
+      const nextCell = presentationCells[index]
+      setSelectedCell(nextCell.id)
+      setSelectedOrganelle(getDefaultOrganelle(nextCell.id, customCells))
+      setCompareCell(getCellProfile(nextCell.id, customCells).compareTarget)
+      setToast(`Presentation: ${nextCell.name}`)
+    }, 5200)
+
+    return () => window.clearInterval(timer)
+  }, [allCells, customCells, demoMode, selectedCell])
+
+  useEffect(() => {
     if (allCells.some((cell) => cell.id === selectedCell)) return
     setSelectedCell('plant')
     setSelectedOrganelle(getDefaultOrganelle('plant', customCells))
     setCompareCell(getCellProfile('plant', customCells).compareTarget)
-    setToast('Saved custom cell was missing; Plant Cell loaded')
+    setToast('Saved model was missing; starter model loaded')
   }, [allCells, customCells, selectedCell])
 
   useEffect(() => {
@@ -118,7 +257,7 @@ function App() {
     setSelectedOrganelle(getDefaultOrganelle(cellId, customCells))
     setInspectorOpen(false)
     setCompareCell((current) => (current === cellId ? getCellProfile(cellId, customCells).compareTarget : current))
-    if (nextCell.custom) setUploadedImage({ name: nextCell.name, url: nextCell.imageUrl || '' })
+    if (nextCell.custom) setUploadedImage({ name: nextCell.name, url: nextCell.imageUrl || nextCell.thumbnailUrl || '' })
     setToast(`${nextCell.name} loaded`)
   }
 
@@ -150,7 +289,7 @@ function App() {
     const detail = getOrganelleDetail(selectedCell, selectedOrganelle, customCells)
 
     if (!sceneExporter) {
-      downloadJson(`${selectedCell}-cell-export.json`, {
+      downloadJson(`${selectedCell}-model-export.json`, {
         cell,
         selectedOrganelle,
         detail,
@@ -170,7 +309,7 @@ function App() {
       setToast(`${cell.name} GLB downloaded`)
     } catch (error) {
       console.error(error)
-      downloadJson(`${selectedCell}-cell-export.json`, {
+      downloadJson(`${selectedCell}-model-export.json`, {
         cell,
         selectedOrganelle,
         detail,
@@ -193,8 +332,31 @@ function App() {
             }
           : cell
       ))
-      return persistCustomCells(next).cells
+      persistCustomCells(next)
+      return next
     })
+  }
+
+  function addGenerationHistory(entry) {
+    const nextEntry = {
+      id: entry.id || `history-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      startedAt: new Date().toISOString(),
+      status: 'queued',
+      ...entry,
+    }
+    setGenerationHistory((items) => [nextEntry, ...items].slice(0, 40))
+    return nextEntry.id
+  }
+
+  function updateGenerationHistory(entryId, patch) {
+    setGenerationHistory((items) => items.map((item) => (
+      item.id === entryId
+        ? {
+            ...item,
+            ...(typeof patch === 'function' ? patch(item) : patch),
+          }
+        : item
+    )))
   }
 
   async function generateCustomCellModel(customCell, imageUrl, fileName, requestedProvider = settings.generationMode) {
@@ -203,6 +365,16 @@ function App() {
 
     for (const provider of providers) {
       const label = getProviderLabel(provider)
+      const startedAt = Date.now()
+      const historyId = addGenerationHistory({
+        cellId: customCell.id,
+        cellName: customCell.name,
+        provider,
+        requestedProvider,
+        sourceImageUrl: imageUrl,
+        status: 'queued',
+        message: `Queued ${label} generation.`,
+      })
 
       if (provider === 'cinematic') {
         updateCustomCell(customCell.id, (cell) => ({
@@ -217,7 +389,14 @@ function App() {
             message: 'JS depth relief is ready.',
           },
         }))
-        setToast(`${customCell.name} JS depth visual ready`)
+        updateGenerationHistory(historyId, {
+          status: 'success',
+          progress: 100,
+          finishedAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          message: 'JS depth relief is ready.',
+        })
+        setToast(`${customCell.name} JS depth preview ready`)
         return
       }
 
@@ -234,6 +413,11 @@ function App() {
             message: `Sending image to ${label}.`,
           },
         }))
+        updateGenerationHistory(historyId, {
+          status: 'uploading',
+          progress: 0,
+          message: `Sending image to ${label}.`,
+        })
         setToast(`Creating ${label} image-to-3D task`)
 
         const task = await create3dGeneration({
@@ -255,6 +439,12 @@ function App() {
             message: `${label} is generating the GLB model.`,
           },
         }))
+        updateGenerationHistory(historyId, {
+          status: 'processing',
+          progress: 0,
+          taskId: task.taskId,
+          message: `${label} is generating the GLB model.`,
+        })
         setToast(`${label} task started: ${String(task.taskId).slice(0, 8)}`)
 
         const finalStatus = await waitFor3dModel(task.taskId, provider, (status) => {
@@ -269,6 +459,12 @@ function App() {
               message: status.progress ? `${label} progress ${status.progress}%` : `${label} status: ${status.status || 'processing'}`,
             },
           }))
+          updateGenerationHistory(historyId, {
+            status: status.status || 'processing',
+            progress: status.progress ?? null,
+            taskId: task.taskId,
+            message: status.progress ? `${label} progress ${status.progress}%` : `${label} status: ${status.status || 'processing'}`,
+          })
         })
 
         updateCustomCell(customCell.id, (cell) => ({
@@ -284,11 +480,28 @@ function App() {
             message: `${label} GLB loaded.`,
           },
         }))
+        updateGenerationHistory(historyId, {
+          status: 'success',
+          progress: 100,
+          taskId: task.taskId,
+          modelUrl: finalStatus.modelUrl,
+          rawModelUrl: finalStatus.rawModelUrl,
+          finishedAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          message: `${label} GLB loaded.`,
+        })
         setToast(`${customCell.name} ${label} 3D model ready`)
         return
       } catch (error) {
         const message = error instanceof Error ? error.message : `${label} generation failed.`
         errors.push(`${label}: ${message}`)
+        updateGenerationHistory(historyId, {
+          status: 'failed',
+          progress: null,
+          finishedAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          message,
+        })
 
         if (provider !== providers[providers.length - 1]) {
           updateCustomCell(customCell.id, (cell) => ({
@@ -352,10 +565,12 @@ function App() {
       const requestedMode = settings.generationMode === 'local' ? 'cinematic' : settings.generationMode
       if (settings.generationMode === 'local') setToast('Local GLB mode needs a model file; using JS Depth')
       const { displayUrl, generationUrl } = await prepareImageForUpload(file)
+      const thumbnailUrl = await createImageThumbnailDataUrl(displayUrl)
       customCell = createCustomCell(file.name, displayUrl, {
         provider: requestedMode,
         requestedProvider: requestedMode,
-        type: requestedMode === 'cinematic' ? `JS Depth ${getCell(inferCellTemplate(file.name)).name}` : undefined,
+        thumbnailUrl: thumbnailUrl || displayUrl,
+        type: requestedMode === 'cinematic' ? `JS Depth preview · ${getCell(inferCellTemplate(file.name)).name} fallback` : undefined,
       })
       customCell.generation = {
         ...customCell.generation,
@@ -365,7 +580,8 @@ function App() {
         progress: 0,
         message: requestedMode === 'cinematic' ? 'Building browser-side JS depth relief.' : 'Sending image to backend.',
       }
-      const nextCustomCells = persistCustomCells([customCell, ...customCells].slice(0, 8)).cells
+      const nextCustomCells = [customCell, ...customCells].slice(0, 8)
+      persistCustomCells(nextCustomCells)
 
       setCustomCells(nextCustomCells)
       setUploadedImage({ name: file.name, url: displayUrl })
@@ -394,6 +610,8 @@ function App() {
   async function handleUploadLocalModel(file) {
     setToast('Importing local 3D model')
     let customCell = null
+    let historyId = ''
+    const startedAt = Date.now()
 
     try {
       customCell = createCustomCell(file.name, '', {
@@ -404,7 +622,17 @@ function App() {
         progress: 0,
         message: 'Saving model to local cache.',
       })
-      const nextCustomCells = persistCustomCells([customCell, ...customCells].slice(0, 8)).cells
+      historyId = addGenerationHistory({
+        cellId: customCell.id,
+        cellName: customCell.name,
+        provider: 'local',
+        requestedProvider: 'local',
+        status: 'uploading',
+        sourceImageUrl: '',
+        message: 'Importing local GLB/GLTF.',
+      })
+      const nextCustomCells = [customCell, ...customCells].slice(0, 8)
+      persistCustomCells(nextCustomCells)
 
       setCustomCells(nextCustomCells)
       setUploadedImage({ name: file.name, url: '' })
@@ -427,6 +655,15 @@ function App() {
           message: 'Local GLB loaded from disk cache.',
         },
       }))
+      updateGenerationHistory(historyId, {
+        status: 'success',
+        progress: 100,
+        taskId: localModel.taskId,
+        modelUrl: localModel.modelUrl,
+        finishedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+        message: 'Local GLB loaded from disk cache.',
+      })
       setToast(`${customCell.name} local 3D model ready`)
     } catch (error) {
       console.error(error)
@@ -442,20 +679,38 @@ function App() {
           },
         }))
       }
+      if (historyId) {
+        updateGenerationHistory(historyId, {
+          status: 'failed',
+          progress: null,
+          finishedAt: new Date().toISOString(),
+          durationMs: Date.now() - startedAt,
+          message: error instanceof Error ? error.message : 'Local model import failed.',
+        })
+      }
       setToast(error instanceof Error ? error.message : 'Local model import failed')
     }
   }
 
-  function handleSaveGallery() {
+  async function handleSaveGallery() {
+    const cell = getCell(selectedCell, customCells)
+    const detail = getOrganelleDetail(selectedCell, selectedOrganelle, customCells)
+    const generation = cell.custom ? cell.generation : null
+    const thumbnailUrl = getCanvasImageDataUrl({ scale: 1, maxWidth: 420 }) || cell.imageUrl || ''
     const item = {
       id: `${Date.now()}-${selectedCell}-${selectedOrganelle}`,
+      title: `${cell.name} / ${detail.title}`,
       cellId: selectedCell,
       organelleId: selectedOrganelle,
       microscope: selectedMicroscope,
+      crossSection,
+      generationProvider: generation?.provider || 'built-in',
+      modelUrl: generation?.modelUrl || '',
+      thumbnailUrl,
       createdAt: new Date().toISOString(),
     }
     setGalleryItems((items) => [item, ...items].slice(0, 12))
-    setToast('View saved to Gallery')
+    setToast(thumbnailUrl ? 'View saved with screenshot' : 'View saved without screenshot')
   }
 
   function handleClearGallery() {
@@ -463,13 +718,53 @@ function App() {
     setToast('Gallery cleared')
   }
 
+  function handleRestoreGalleryItem(item) {
+    if (!item) return
+    handleSelectCell(item.cellId)
+    setSelectedOrganelle(item.organelleId)
+    setSelectedMicroscope(item.microscope)
+    if (typeof item.crossSection === 'boolean') setCrossSection(item.crossSection)
+    setToast('Saved gallery view restored')
+  }
+
+  function handleRenameGalleryItem(itemId, title) {
+    const nextTitle = title.trim()
+    if (!nextTitle) return
+    setGalleryItems((items) => items.map((item) => (item.id === itemId ? { ...item, title: nextTitle } : item)))
+    setToast('Gallery item renamed')
+  }
+
+  function handleDeleteGalleryItem(itemId) {
+    setGalleryItems((items) => items.filter((item) => item.id !== itemId))
+    setToast('Gallery item removed')
+  }
+
+  function handleDownloadGalleryImage(item) {
+    if (!item?.thumbnailUrl) {
+      setToast('No screenshot stored for this view')
+      return
+    }
+    const link = document.createElement('a')
+    link.href = item.thumbnailUrl
+    link.download = `${item.cellId}-${item.organelleId}-gallery.png`
+    link.click()
+    setToast('Gallery screenshot downloaded')
+  }
+
+  function handleExportGallery() {
+    downloadJson('3d-model-studio-gallery.json', galleryItems)
+    setToast('Gallery JSON exported')
+  }
+
   function handleDeleteCustomCell(cellId) {
     const deleted = customCells.find((cell) => cell.id === cellId)
     if (!deleted) return
 
-    const nextCustomCells = persistCustomCells(customCells.filter((cell) => cell.id !== cellId)).cells
+    const nextCustomCells = customCells.filter((cell) => cell.id !== cellId)
+    persistCustomCells(nextCustomCells)
     setCustomCells(nextCustomCells)
     setGalleryItems((items) => items.filter((item) => item.cellId !== cellId))
+    setGenerationHistory((items) => items.filter((item) => item.cellId !== cellId))
     setNotes((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${cellId}:`))))
 
     if (selectedCell === cellId) {
@@ -492,6 +787,253 @@ function App() {
     })
   }
 
+  function buildNotebookText() {
+    const cell = getCell(selectedCell, customCells)
+    const detail = getOrganelleDetail(selectedCell, selectedOrganelle, customCells)
+    const profile = getCellProfile(selectedCell, customCells)
+
+    return [
+      `# ${cell.name} - ${detail.title}`,
+      '',
+      `Type: ${cell.type}`,
+      `View: ${selectedMicroscope}`,
+      '',
+      '## Observation',
+      profile.summary,
+      '',
+      '## Part Detail',
+      `${detail.title}: ${detail.subtitle}. Scale: ${detail.size}. Position: ${detail.location}. Visibility: ${detail.visible}.`,
+      '',
+      '## Narration',
+      `${cell.name} highlights ${detail.title.toLowerCase()} as a key structure. ${detail.note}`,
+    ].join('\n')
+  }
+
+  function handleGenerateNote() {
+    const noteKey = `${selectedCell}:${selectedOrganelle}`
+    const generated = buildNotebookText()
+    setNotes((current) => ({ ...current, [noteKey]: current[noteKey]?.trim() ? `${current[noteKey]}\n\n${generated}` : generated }))
+    setToast('Notebook draft generated')
+  }
+
+  async function handleCopyNote() {
+    const noteKey = `${selectedCell}:${selectedOrganelle}`
+    const text = notes[noteKey] || buildNotebookText()
+    try {
+      await navigator.clipboard.writeText(text)
+      setToast('Notebook copied')
+    } catch {
+      setToast('Clipboard unavailable')
+    }
+  }
+
+  function handleExportNote() {
+    const noteKey = `${selectedCell}:${selectedOrganelle}`
+    const text = notes[noteKey] || buildNotebookText()
+    downloadText(`${selectedCell}-${selectedOrganelle}-notes.md`, text, 'text/markdown;charset=utf-8')
+    setToast('Notebook Markdown exported')
+  }
+
+  async function handleCopyText(text, successMessage = 'Copied') {
+    try {
+      await navigator.clipboard.writeText(text)
+      setToast(successMessage)
+    } catch {
+      setToast('Clipboard unavailable')
+    }
+  }
+
+  function handleClearWorkspaceCache() {
+    if (!window.confirm('Clear uploaded models, gallery items, and notes from this browser?')) return
+    setCustomCells([])
+    setGalleryItems([])
+    setGenerationHistory([])
+    setNotes({})
+    setUploadedImage(null)
+    setSelectedCell('plant')
+    setSelectedOrganelle(getDefaultOrganelle('plant', []))
+    setCompareCell(getCellProfile('plant', []).compareTarget)
+    setToast('Workspace cache cleared')
+  }
+
+  function handleResetWorkspace() {
+    if (!window.confirm('Reset the workspace, settings, saved views, notes, and uploaded models?')) return
+    const normalizedDefaults = normalizeSettings(DEFAULT_SETTINGS)
+    setSettings(normalizedDefaults)
+    setCustomCells([])
+    setGalleryItems([])
+    setGenerationHistory([])
+    setNotes({})
+    setFavoriteKey('')
+    setUploadedImage(null)
+    setSelectedCell('plant')
+    setSelectedOrganelle(getDefaultOrganelle('plant', []))
+    setSelectedMicroscope('Studio Preview')
+    setCrossSection(true)
+    setCompareCell(getCellProfile('plant', []).compareTarget)
+    setActivePanel(null)
+    setInspectorOpen(false)
+    setToast('Workspace reset')
+  }
+
+  function buildProjectSnapshot(name) {
+    return {
+      name,
+      thumbnailUrl: getCanvasImageDataUrl({ scale: 1, maxWidth: 420 }) || getCell(selectedCell, customCells).imageUrl || '',
+      summary: `${getCell(selectedCell, customCells).name} / ${getOrganelleDetail(selectedCell, selectedOrganelle, customCells).title}`,
+      state: {
+        customCells,
+        galleryItems,
+        generationHistory,
+        notes,
+        settings,
+        ui: {
+          selectedCell,
+          selectedOrganelle,
+          selectedMicroscope,
+          compareCell,
+          crossSection,
+          favoriteKey,
+        },
+      },
+    }
+  }
+
+  async function refreshProjects() {
+    try {
+      setProjects(await listProjects())
+    } catch {
+      setProjects([])
+    }
+  }
+
+  async function handleSaveProject() {
+    const fallbackName = `${getCell(selectedCell, customCells).name} Workspace`
+    const name = window.prompt('Project name', fallbackName)
+    if (name === null) return
+    const project = await saveProject(buildProjectSnapshot(name.trim() || fallbackName))
+    await refreshProjects()
+    setToast(`${project.name} saved`)
+  }
+
+  async function handleLoadProject(projectId) {
+    const project = await loadProject(projectId)
+    if (!project?.state) {
+      setToast('Project could not be loaded')
+      return
+    }
+
+    const nextCustomCells = project.state.customCells || []
+    persistCustomCells(nextCustomCells)
+    const ui = project.state.ui || {}
+    const nextSettings = normalizeSettings(project.state.settings || DEFAULT_SETTINGS)
+    setCustomCells(nextCustomCells)
+    setGalleryItems(project.state.galleryItems || [])
+    setGenerationHistory(project.state.generationHistory || [])
+    setNotes(project.state.notes || {})
+    setSettings(nextSettings)
+    setSelectedCell(ui.selectedCell || 'plant')
+    setSelectedOrganelle(ui.selectedOrganelle || getDefaultOrganelle(ui.selectedCell || 'plant', nextCustomCells))
+    setSelectedMicroscope(ui.selectedMicroscope || 'Studio Preview')
+    setCompareCell(ui.compareCell || getCellProfile(ui.selectedCell || 'plant', nextCustomCells).compareTarget)
+    setCrossSection(typeof ui.crossSection === 'boolean' ? ui.crossSection : true)
+    setFavoriteKey(ui.favoriteKey || '')
+    setUploadedImage(getUploadPreviewFromCustomCells(nextCustomCells))
+    setActivePanel(null)
+    setInspectorOpen(false)
+    setToast(`${project.name} loaded`)
+  }
+
+  async function handleDeleteProject(projectId) {
+    await deleteProject(projectId)
+    await refreshProjects()
+    setToast('Project deleted')
+  }
+
+  function handleExportProject(project) {
+    downloadJson(`${project.name || '3d-model-studio-project'}.modelstudio.json`, project)
+    setToast('Project package exported')
+  }
+
+  function handleClearGenerationHistory() {
+    setGenerationHistory([])
+    setToast('Generation history cleared')
+  }
+
+  function handleExportDiagnostics() {
+    downloadJson(`3d-model-studio-diagnostics-${Date.now()}.json`, {
+      exportedAt: new Date().toISOString(),
+      selected: {
+        cell: selectedCell,
+        organelle: selectedOrganelle,
+        microscope: selectedMicroscope,
+        compareCell,
+        crossSection,
+      },
+      settings,
+      apiHealth,
+      serverLogs,
+      generationHistory,
+      galleryCount: galleryItems.length,
+      noteCount: Object.keys(notes).length,
+      customCells: customCells.map((cell) => ({
+        id: cell.id,
+        name: cell.name,
+        template: cell.template,
+        provider: cell.generation?.provider,
+        requestedProvider: cell.generation?.requestedProvider,
+        status: cell.generation?.status,
+        progress: cell.generation?.progress,
+        taskId: cell.generation?.taskId,
+        modelUrl: cell.generation?.modelUrl,
+        message: cell.generation?.message,
+      })),
+    })
+    setToast('Diagnostics exported')
+  }
+
+  async function handleRunProviderCompare(cellId = selectedCell) {
+    const sourceCell = getCustomCell(cellId, customCells)
+    if (!sourceCell?.imageUrl) {
+      setToast('Provider compare needs a custom model with a source image')
+      return
+    }
+
+    const providers = apiHealth?.providers?.fal?.configured ? ['rodin', 'tripo', 'fal', 'cinematic'] : ['rodin', 'tripo', 'cinematic']
+    const comparisonCells = providers.map((provider) => createCustomCell(`${sourceCell.name} ${getProviderLabel(provider)} compare.png`, sourceCell.imageUrl, {
+      provider,
+      requestedProvider: provider,
+      type: `${getProviderLabel(provider)} compare · ${getCell(sourceCell.template).name} fallback`,
+    }))
+
+    setCustomCells((current) => {
+      const next = [...comparisonCells, ...current].slice(0, 12)
+      persistCustomCells(next)
+      return next
+    })
+    setSelectedCell(comparisonCells[0].id)
+    setSelectedOrganelle(getDefaultOrganelle(comparisonCells[0].id, comparisonCells))
+    setActivePanel('Library')
+    setToast(`Provider compare started: ${providers.map(getProviderLabel).join(', ')}`)
+
+    await Promise.all(comparisonCells.map(async (candidate) => {
+      try {
+        await generateCustomCellModel(candidate, sourceCell.imageUrl, `${candidate.name}.png`, candidate.generation.provider)
+      } catch (error) {
+        console.error(error)
+        updateCustomCell(candidate.id, (cell) => ({
+          generation: {
+            ...cell.generation,
+            status: 'failed',
+            progress: null,
+            message: error instanceof Error ? error.message : 'Provider comparison failed.',
+          },
+        }))
+      }
+    }))
+    setToast('Provider compare finished')
+  }
+
   function handleOpenCompare(cellId) {
     setCompareCell(cellId)
     setActivePanel('Compare')
@@ -501,7 +1043,7 @@ function App() {
   return (
     <main className={settings.compactUi ? 'studio-shell compact-ui' : 'studio-shell'}>
       <motion.div className={demoMode ? 'studio-window workbench-v2 demo-mode' : 'studio-window workbench-v2'} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38 }}>
-        <StudioHeader activePanel={activePanel} setActivePanel={setActivePanel} demoMode={demoMode} onToggleDemoMode={toggleDemoMode} onNotify={setToast} />
+        <StudioHeader activePanel={activePanel} setActivePanel={setActivePanel} demoMode={demoMode} language={settings.language} onToggleDemoMode={toggleDemoMode} onNotify={setToast} />
         <WorkspaceDrawer
           activePanel={activePanel}
           selectedCell={selectedCell}
@@ -510,8 +1052,10 @@ function App() {
           allCells={allCells}
           customCells={customCells}
           galleryItems={galleryItems}
+          generationHistory={generationHistory}
           notes={notes}
           settings={settings}
+          projects={projects}
           crossSection={crossSection}
           selectedMicroscope={selectedMicroscope}
           uploadedImage={uploadedImage}
@@ -525,10 +1069,34 @@ function App() {
           }}
           onSaveGallery={handleSaveGallery}
           onClearGallery={handleClearGallery}
+          onRestoreGalleryItem={handleRestoreGalleryItem}
+          onRenameGalleryItem={handleRenameGalleryItem}
+          onDeleteGalleryItem={handleDeleteGalleryItem}
+          onDownloadGalleryImage={handleDownloadGalleryImage}
+          onExportGallery={handleExportGallery}
+          onClearGenerationHistory={handleClearGenerationHistory}
           onUpdateNote={handleUpdateNote}
+          onGenerateNote={handleGenerateNote}
+          onCopyNote={handleCopyNote}
+          onExportNote={handleExportNote}
           onUpdateSettings={setSettings}
           onSetCrossSection={setCrossSection}
           onExport={handleExport}
+          exportAvailable={Boolean(sceneExporter)}
+          exportReason={sceneExporter ? 'GLB export ready' : 'No mounted WebGL model is available for GLB export.'}
+          apiHealth={apiHealth}
+          serverLogs={serverLogs}
+          onRefreshApiHealth={refreshApiHealth}
+          onRefreshServerLogs={refreshServerLogs}
+          onExportDiagnostics={handleExportDiagnostics}
+          onClearWorkspaceCache={handleClearWorkspaceCache}
+          onResetWorkspace={handleResetWorkspace}
+          onSaveProject={handleSaveProject}
+          onLoadProject={handleLoadProject}
+          onDeleteProject={handleDeleteProject}
+          onExportProject={handleExportProject}
+          onRunProviderCompare={handleRunProviderCompare}
+          onCopyText={handleCopyText}
           onNotify={setToast}
         />
         <StatusToast message={toast} />
@@ -546,9 +1114,12 @@ function App() {
               crossSection={crossSection}
               setCrossSection={setCrossSection}
               renderQuality={settings.quality}
+              screenshotScale={settings.screenshotScale}
               customCells={customCells}
               onNotify={setToast}
               onExport={handleExport}
+              exportAvailable={Boolean(sceneExporter)}
+              exportReason={sceneExporter ? 'Export the current WebGL scene as GLB.' : 'No mounted WebGL model is available for GLB export.'}
               onExporterReady={setSceneExporter}
               onRetryGeneration={handleRetryGeneration}
               onOpenInspector={openInspector}
@@ -559,10 +1130,9 @@ function App() {
             <LeftSidebar
               selectedCell={selectedCell}
               setSelectedCell={handleSelectCell}
-              selectedOrganelle={selectedOrganelle}
-              setSelectedOrganelle={setSelectedOrganelle}
               customCells={customCells}
               onDeleteCustomCell={handleDeleteCustomCell}
+              onRetryGeneration={handleRetryGeneration}
             />
           </div>
 
@@ -602,6 +1172,7 @@ function App() {
               selectedMicroscope={selectedMicroscope}
               setSelectedMicroscope={setSelectedMicroscope}
               uploadedImage={uploadedImage}
+              latestUploadCell={latestUploadCell}
               generationMode={settings.generationMode}
               onGenerationModeChange={(generationMode) => setSettings((current) => ({ ...current, generationMode }))}
               onUploadImage={handleUploadImage}
@@ -609,7 +1180,6 @@ function App() {
               customCells={customCells}
               onCompare={handleOpenCompare}
               onOpenGenerationCell={handleSelectCell}
-              onRetryGeneration={handleRetryGeneration}
               onNotify={setToast}
             />
           </div>

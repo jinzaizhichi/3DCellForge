@@ -1,22 +1,19 @@
-import { useMemo, useState } from 'react'
-import { ChevronDown, CircleDot, Heart, Sparkles as SparklesIcon, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, Clock3, Heart, RotateCcw, Sparkles as SparklesIcon, Trash2 } from 'lucide-react'
 
-import { CELL_TYPES, ORGANELLES } from '../domain/cellData.js'
-import { getAvailableOrganelleIds, getCell, getPrimaryCells } from '../domain/cellCatalog.js'
+import { getProviderLabel } from '../services/modelApi.js'
 import { CellThumb } from './CellThumb.jsx'
 
-export function LeftSidebar({ selectedCell, setSelectedCell, selectedOrganelle, setSelectedOrganelle, customCells, onDeleteCustomCell }) {
+const ACTIVE_STATUSES = new Set(['uploading', 'processing', 'queued', 'running', 'pending'])
+const READY_STATUSES = new Set(['success', 'local'])
+
+export function LeftSidebar({ selectedCell, setSelectedCell, customCells, onDeleteCustomCell, onRetryGeneration }) {
   const [recentOpen, setRecentOpen] = useState(false)
-  const primaryCells = getPrimaryCells(customCells)
-  const availableOrganelles = getAvailableOrganelleIds(selectedCell, customCells)
-  const selected = getCell(selectedCell, customCells)
-  const currentCustomCell = selected.custom && !selected.reference ? selected : null
-  const recentCells = useMemo(
-    () => primaryCells.filter((cell) => cell.custom && !cell.reference && cell.id !== currentCustomCell?.id),
-    [currentCustomCell?.id, primaryCells],
-  )
-  const visibleCells = currentCustomCell ? [currentCustomCell, ...CELL_TYPES] : CELL_TYPES
+  const latestCustomCell = customCells.find((cell) => cell.custom && !cell.reference)
+  const recentCells = customCells.filter((cell) => cell.custom && !cell.reference && cell.id !== latestCustomCell?.id)
+  const queueItems = customCells.filter((cell) => cell.custom && !cell.reference && cell.generation)
   const storedCustomIds = new Set(customCells.map((cell) => cell.id))
+  const queueCount = queueItems.filter((cell) => ACTIVE_STATUSES.has(String(cell.generation?.status || '').toLowerCase())).length || queueItems.length
 
   function renderCellRow(cell, { compact = false } = {}) {
     const canDelete = storedCustomIds.has(cell.id)
@@ -50,16 +47,30 @@ export function LeftSidebar({ selectedCell, setSelectedCell, selectedOrganelle, 
         <header className="panel-title">
           <span>
             <SparklesIcon size={14} />
-            Cell Types
+            Model Library
           </span>
           <ChevronDown size={14} />
         </header>
+        {latestCustomCell && (
+          <div className="pinned-models">
+            <div className="pinned-model-block">
+              <span className="model-section-label">Latest Upload</span>
+              {renderCellRow(latestCustomCell)}
+            </div>
+          </div>
+        )}
         <div className="cell-list">
-          {visibleCells.map((cell) => renderCellRow(cell))}
+          {!latestCustomCell && recentCells.length === 0 && (
+            <div className="library-empty">
+              <SparklesIcon size={16} />
+              <span>No saved models yet.</span>
+              <small>Upload an image or GLB from Asset Source.</small>
+            </div>
+          )}
           {recentCells.length > 0 && (
             <div className="recent-cells">
               <button type="button" className="recent-toggle" onClick={() => setRecentOpen((value) => !value)} aria-expanded={recentOpen}>
-                <span>Recent Uploads</span>
+                <span>Older Uploads</span>
                 <small>{recentCells.length}</small>
                 <ChevronDown size={13} />
               </button>
@@ -76,26 +87,59 @@ export function LeftSidebar({ selectedCell, setSelectedCell, selectedOrganelle, 
       <section className="panel organelles-panel">
         <header className="panel-title">
           <span>
-            <CircleDot size={14} />
-            Organelles
+            <Clock3 size={14} />
+            Generation Queue
           </span>
-          <ChevronDown size={14} />
+          <small>{queueCount}</small>
         </header>
-        <div className="organelle-list">
-          {availableOrganelles.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className={selectedOrganelle === id ? 'organelle-row active' : 'organelle-row'}
-              onClick={() => setSelectedOrganelle(id)}
-              style={{ '--dot': ORGANELLES[id].accent }}
-            >
-              <span className="dot" />
-              {ORGANELLES[id].label}
-            </button>
-          ))}
-        </div>
+        {queueItems.length === 0 ? (
+          <div className="queue-empty">
+            <Clock3 size={15} />
+            <span>No generation jobs yet.</span>
+          </div>
+        ) : (
+          <div className="left-queue-list">
+            {queueItems.map((cell) => {
+              const generation = cell.generation || {}
+              const status = String(generation.status || 'pending').toLowerCase()
+              const failed = status === 'failed'
+              const ready = READY_STATUSES.has(status)
+              const active = ACTIVE_STATUSES.has(status)
+
+              return (
+                <div key={cell.id} className={selectedCell === cell.id ? 'left-queue-row active' : 'left-queue-row'}>
+                  <button type="button" onClick={() => setSelectedCell(cell.id)}>
+                    <CellThumb cell={cell} selected={selectedCell === cell.id} />
+                    <span>
+                      <strong>{cell.name}</strong>
+                      <small>{getProviderLabel(generation.provider || generation.requestedProvider)} · {formatQueueStatus(status, generation.progress)}</small>
+                    </span>
+                  </button>
+                  <span className={failed ? 'queue-state failed' : ready ? 'queue-state ready' : active ? 'queue-state active' : 'queue-state'}>
+                    {failed ? <AlertTriangle size={13} /> : ready ? <CheckCircle2 size={13} /> : <Clock3 size={13} />}
+                  </span>
+                  {failed && (
+                    <button type="button" className="queue-retry" onClick={() => onRetryGeneration?.(cell.id)} aria-label={`Retry ${cell.name}`}>
+                      <RotateCcw size={12} />
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </section>
     </aside>
   )
+}
+
+function formatQueueStatus(status, progress) {
+  if (status === 'success') return 'ready'
+  if (status === 'local') return 'local ready'
+  if (status === 'failed') return 'failed'
+  if (Number.isFinite(progress)) return `${progress}%`
+  if (status === 'uploading') return 'uploading'
+  if (status === 'processing' || status === 'running') return 'generating'
+  if (status === 'queued' || status === 'pending') return 'queued'
+  return status || 'pending'
 }

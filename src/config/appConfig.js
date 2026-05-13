@@ -1,6 +1,10 @@
 export const SETTINGS_STORAGE_KEY = 'bio-demo-settings'
+export const GALLERY_STORAGE_KEY = 'bio-demo-gallery'
+export const GENERATION_HISTORY_STORAGE_KEY = 'bio-demo-generation-history'
+export const NOTES_STORAGE_KEY = 'bio-demo-notes'
+export const PROJECT_FALLBACK_STORAGE_KEY = 'bio-demo-projects'
 const VITE_ENV = import.meta.env || {}
-export const SETTINGS_STORAGE_VERSION = 4
+export const SETTINGS_STORAGE_VERSION = 5
 export const UI_STATE_STORAGE_KEY = 'bio-demo-ui-state'
 export const UI_STATE_STORAGE_VERSION = 1
 export const FAL_MODEL_OPTIONS = [
@@ -18,8 +22,22 @@ export const DEFAULT_SETTINGS = {
   generationProvider: 'rodin',
   generationMode: 'rodin',
   falModelId: DEFAULT_FAL_MODEL,
+  screenshotScale: 2,
+  language: 'en',
   settingsVersion: SETTINGS_STORAGE_VERSION,
 }
+
+export const SCREENSHOT_SCALE_OPTIONS = [
+  { id: 1, label: '1x' },
+  { id: 2, label: '2x' },
+  { id: 3, label: '3x' },
+]
+
+export const LANGUAGE_OPTIONS = [
+  { id: 'en', label: 'English' },
+  { id: 'zh', label: '中文' },
+]
+export const LANGUAGE_IDS = new Set(LANGUAGE_OPTIONS.map((option) => option.id))
 
 export const CUSTOM_CELL_STORAGE_KEY = 'bio-demo-custom-cells'
 export const MAX_PERSISTED_IMAGE_EDGE = 1280

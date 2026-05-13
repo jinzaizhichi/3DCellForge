@@ -23,6 +23,8 @@ export const HUNYUAN_STATUS_PATH = process.env.HUNYUAN_STATUS_PATH || '/status'
 export const FAL_API_KEY = process.env.FAL_API_KEY || process.env.FAL_KEY
 export const FAL_DEFAULT_MODEL = process.env.FAL_DEFAULT_MODEL || 'fal-ai/hunyuan3d/v2'
 export const LOCAL_MODEL_DIR = path.resolve(process.env.LOCAL_MODEL_DIR || '.generated-models')
+export const LOG_DIR = path.resolve(process.env.LOG_DIR || '.logs')
+export const LOG_FILE = path.resolve(LOG_DIR, process.env.LOG_FILE || '3d-model-studio-api.log')
 export const OUTBOUND_PROXY_AGENT = createProxyAgent()
 
 export function hasOutboundProxy() {

@@ -172,6 +172,17 @@ export async function prepareImageForUpload(file) {
   }
 }
 
+export async function createImageThumbnailDataUrl(sourceUrl, maxEdge = 160) {
+  if (!sourceUrl) return ''
+
+  try {
+    return await buildPersistentImageDataUrl(sourceUrl, maxEdge)
+  } catch (error) {
+    console.warn(error)
+    return ''
+  }
+}
+
 function createTransparentCanvas(width, height) {
   const canvas = document.createElement('canvas')
   canvas.width = width

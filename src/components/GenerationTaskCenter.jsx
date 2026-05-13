@@ -6,23 +6,30 @@ import { CellThumb } from './CellThumb.jsx'
 const ACTIVE_STATUSES = new Set(['uploading', 'processing', 'queued', 'running', 'pending'])
 const SUCCESS_STATUSES = new Set(['success', 'local'])
 
-export function GenerationTaskCenter({ customCells = [], selectedCell, onOpenCell, onRetryGeneration }) {
+export function GenerationTaskCenter({ customCells = [], generationHistory = [], selectedCell, onOpenCell, onRetryGeneration, onRunProviderCompare }) {
   const tasks = customCells
     .filter((cell) => cell.generation && !cell.reference)
     .slice(0, 6)
+  const selectedCustomCell = customCells.find((cell) => cell.id === selectedCell && cell.imageUrl)
+  const recentHistory = generationHistory.slice(0, 4)
 
   const activeCount = tasks.filter((cell) => ACTIVE_STATUSES.has(String(cell.generation?.status || '').toLowerCase())).length
 
   return (
     <section className="panel task-panel">
       <header className="panel-title">
-        <span>Generation Tasks</span>
+        <span>Generation Queue</span>
         <small>{activeCount || tasks.length}</small>
       </header>
+      {selectedCustomCell && (
+        <div className="task-actions">
+          <button type="button" onClick={() => onRunProviderCompare(selectedCustomCell.id)}>Compare Providers</button>
+        </div>
+      )}
       {tasks.length === 0 ? (
         <div className="task-empty">
           <Clock3 size={15} />
-          <span>Upload an image or GLB to start a task.</span>
+          <span>Upload an image or GLB to start a model job.</span>
         </div>
       ) : (
         <div className="task-list">
@@ -54,6 +61,17 @@ export function GenerationTaskCenter({ customCells = [], selectedCell, onOpenCel
               </div>
             )
           })}
+        </div>
+      )}
+      {recentHistory.length > 0 && (
+        <div className="task-history">
+          <strong>History</strong>
+          {recentHistory.map((item) => (
+            <button key={item.id} type="button" className="task-history-row" onClick={() => onOpenCell(item.cellId)}>
+              <span>{item.cellName}</span>
+              <small>{getProviderLabel(item.provider)} · {formatTaskStatus(String(item.status || '').toLowerCase(), item.progress)}</small>
+            </button>
+          ))}
         </div>
       )}
     </section>

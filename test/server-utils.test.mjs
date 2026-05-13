@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseDataUrl, sanitizeFileName } from '../server/http-utils.mjs'
+import { assertLocalDiagnosticsRequest, parseDataUrl, sanitizeFileName } from '../server/http-utils.mjs'
 import { getModelExtension, shouldAttachTripoAuth, validateModelBuffer } from '../server/model-store.mjs'
 import { findFirstValue, findModelUrl, isSuccessStatus } from '../server/object-utils.mjs'
 import { buildFalInput, decodeFalTaskId, encodeFalTaskId, findFalModelFile, normalizeFalModelId, normalizeFalStatus } from '../server/providers/fal.mjs'
@@ -22,6 +22,32 @@ describe('server utility functions', () => {
     assert.equal(image.buffer.length, 1024)
     assert.throws(() => parseDataUrl('data:text/plain;base64,abc'), /Only PNG, JPEG, or WebP/)
     assert.throws(() => parseDataUrl(`data:image/png;base64,${Buffer.alloc(8).toString('base64')}`), /too small/)
+  })
+
+  it('restricts diagnostics logs to local callers and localhost pages', () => {
+    assert.doesNotThrow(() => assertLocalDiagnosticsRequest({
+      socket: { remoteAddress: '127.0.0.1' },
+      headers: { origin: 'http://127.0.0.1:5174' },
+    }))
+    assert.doesNotThrow(() => assertLocalDiagnosticsRequest({
+      socket: { remoteAddress: '::ffff:127.0.0.1' },
+      headers: { referer: 'http://localhost:5174/logs' },
+    }))
+
+    assert.throws(
+      () => assertLocalDiagnosticsRequest({
+        socket: { remoteAddress: '192.168.1.8' },
+        headers: {},
+      }),
+      /only available from this machine/,
+    )
+    assert.throws(
+      () => assertLocalDiagnosticsRequest({
+        socket: { remoteAddress: '127.0.0.1' },
+        headers: { origin: 'https://example.com' },
+      }),
+      /only available to localhost pages/,
+    )
   })
 
   it('detects model extensions and validates GLB headers', () => {
@@ -120,6 +146,7 @@ describe('server utility functions', () => {
     const generated = {
       id: 'custom-ready',
       imageUrl: 'data:image/webp;base64,large',
+      thumbnailUrl: 'data:image/webp;base64,thumb',
       generation: { status: 'success', modelUrl: '/api/3d/local-model/task.glb', rawModelUrl: 'https://signed.example.com/model.glb', message: 'ready' },
     }
     const pending = {
@@ -132,14 +159,16 @@ describe('server utility functions', () => {
       compactCustomCellsForStorage([generated, pending], 'generated-previews').map((cell) => cell.imageUrl),
       ['', pending.imageUrl],
     )
+    assert.equal(compactCustomCellsForStorage([generated, pending], 'generated-previews')[0].thumbnailUrl, generated.thumbnailUrl)
     assert.deepEqual(
       compactCustomCellsForStorage([generated, pending], 'minimal').map((cell) => ({
         imageUrl: cell.imageUrl,
+        thumbnailUrl: cell.thumbnailUrl,
         rawModelUrl: cell.generation.rawModelUrl,
       })),
       [
-        { imageUrl: '', rawModelUrl: '' },
-        { imageUrl: '', rawModelUrl: '' },
+        { imageUrl: '', thumbnailUrl: generated.thumbnailUrl, rawModelUrl: '' },
+        { imageUrl: '', thumbnailUrl: undefined, rawModelUrl: '' },
       ],
     )
   })
@@ -160,6 +189,7 @@ describe('server utility functions', () => {
         {
           id: 'custom-ready',
           imageUrl: 'data:image/webp;base64,large',
+          thumbnailUrl: 'data:image/webp;base64,thumb',
           generation: { status: 'success', modelUrl: '/api/3d/local-model/task.glb', rawModelUrl: 'https://signed.example.com/model.glb', message: 'ready' },
         },
       ])
@@ -167,6 +197,7 @@ describe('server utility functions', () => {
       assert.equal(result.stored, true)
       assert.equal(result.compacted, true)
       assert.equal(result.cells[0].imageUrl, '')
+      assert.equal(result.cells[0].thumbnailUrl, 'data:image/webp;base64,thumb')
       assert.equal(result.cells[0].generation.modelUrl, '/api/3d/local-model/task.glb')
       assert.equal(writes.length, 2)
     } finally {

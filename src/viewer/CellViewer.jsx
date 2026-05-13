@@ -918,7 +918,7 @@ export function CinematicLayerVisual({ imageUrl, selectedOrganelle, onSelectOrga
         <div
           className={`layered-png-stage ${autoRotate ? 'auto' : ''}`}
           style={{ '--layer-aspect': visual?.aspect || 1 }}
-          aria-label="Layered transparent PNG cell visual"
+          aria-label="Layered transparent PNG model visual"
         >
           {visual ? (
             visual.layers.map((layer) => (
@@ -981,7 +981,7 @@ export function CellScene({ selectedCell, modelCellId, referenceImageUrl, genera
       <pointLight position={[0, -3.2, 2.4]} intensity={1.35} color="#f9a8d4" />
       <pointLight position={[-2.4, 1.2, 1.6]} intensity={0.75} color="#b8f7a6" />
       {proofMode && <ProofRig />}
-      <group ref={exportRoot} name={`${selectedCell}-cell-export-root`}>
+      <group ref={exportRoot} name={`${selectedCell}-model-export-root`}>
         {generatedModelUrl ? (
           <Suspense fallback={null}>
             <GeneratedGlbModel modelUrl={apiUrl(generatedModelUrl)} proofMode={proofMode} onSelect={onSelectOrganelle} />
@@ -1010,22 +1010,22 @@ export function CellFallback({ selectedCell, modelCellId, referenceImageUrl, sel
 
   if (referenceImageUrl) {
     return (
-      <div className="cell-fallback upload-render-fallback" aria-label="Uploaded cell image fallback">
-        <img src={referenceImageUrl} alt="Uploaded cell reference" />
+      <div className="cell-fallback upload-render-fallback" aria-label="Uploaded model image fallback">
+        <img src={referenceImageUrl} alt="Uploaded model reference" />
       </div>
     )
   }
 
   if (visualCellId === 'plant') {
     return (
-      <div className="cell-fallback plant-render-fallback" aria-label="Plant cell image fallback">
-        <img src={plantCellRender} alt="Detailed plant cell fallback render" />
+      <div className="cell-fallback plant-render-fallback" aria-label="Starter model image fallback">
+        <img src={plantCellRender} alt="Detailed starter model fallback render" />
       </div>
     )
   }
 
   return (
-    <div className="cell-fallback" aria-label="Cell illustration fallback">
+    <div className="cell-fallback" aria-label="Model illustration fallback">
       <button
         type="button"
         className={selectedOrganelle === 'membrane' ? `fallback-cell-body ${visualCellId} active` : `fallback-cell-body ${visualCellId}`}
