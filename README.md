@@ -4,7 +4,7 @@
 
 AI-powered interactive 3D cell generation and exploration studio.
 
-3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, a left-cell / center-stage / right-tools workbench, screenshots, GLB export, collapsed upload history, demo presentation mode, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
+3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, a left-cell / center-stage / right-tools workbench, screenshots, GLB export, collapsed upload history, demo presentation mode, a generation task center, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
 
 ## Demo
 
@@ -19,8 +19,8 @@ Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-dem
 - Drag to rotate, scroll to zoom, isolate structures, inspect organelles, and export the current scene.
 - Demo Mode for screenshots and screen recordings: hides side panels and keeps the model stage clean.
 - Recent Uploads stays collapsed by default, with delete controls for custom generated/imported cells.
-- Organelle detail drawer, microscope references, comparison panel, notes, and gallery actions.
-- Tripo, Rodin, Hunyuan3D, JS Depth, and Local GLB generation/import modes.
+- Organelle detail drawer, microscope references, comparison panel, notes, gallery actions, and a compact generation task center.
+- Hyper3D, Tripo, Fal.ai, Hunyuan3D, JS Depth, and Local GLB generation/import modes.
 - Cached demo GLB models for offline-friendly screenshots and demos.
 - Auxiliary Khronos glTF reference models for GLB loader and PBR material checks.
 - API key stays server-side in `.env.local`; it is never exposed to the frontend bundle.
@@ -34,6 +34,7 @@ Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-dem
 - Drei
 - Framer Motion
 - Tripo API optional backend
+- Fal.ai optional backend
 - Hunyuan3D local API optional backend
 
 ## Quick Start
@@ -52,6 +53,7 @@ The default screen is intentionally quiet:
 - Pick official cells from the left `Cell Types` rail.
 - Uploaded/generated/custom cells are tucked under `Recent Uploads` until expanded.
 - Use the right `Microscope View` rail to choose the generation provider or import a local `.glb` / `.gltf`.
+- Watch upload/generation/import state in the right `Generation Tasks` panel.
 - Click `Info` or `Inspect` only when you need the organelle detail drawer.
 - Click `Demo` in the top navigation to enter a clean presentation mode for screenshots and recordings.
 
@@ -75,6 +77,7 @@ Then set:
 
 ```bash
 TRIPO_API_KEY=your_tripo_key
+FAL_API_KEY=your_fal_key
 RODIN_API_KEY=your_rodin_api_key
 API_HOST=127.0.0.1
 ```
@@ -90,26 +93,29 @@ HUNYUAN_STATUS_PATH=/status
 The 3D generation backend supports these provider paths:
 
 ```text
-Tripo   Tripo cloud generation only (default)
-Rodin   Hyper3D Rodin cloud generation only
-Auto    Tripo first, then Rodin and Hunyuan backup
-Hunyuan Local Hunyuan3D generation only
+Hyper3D  Hyper3D Rodin cloud generation only (default)
+Tripo    Tripo cloud generation only
+Fal      Fal.ai queue generation; model is selected in Settings
+Auto     Hyper3D first, then Tripo, Fal, Hunyuan, and JS Depth backup
+Hunyuan  Local Hunyuan3D generation only
 ```
 
 The upload panel exposes the full generation mode choice before picking a file:
 
 ```text
+Hyper3D     Hyper3D Rodin GLB generation
 Tripo       Tripo cloud GLB generation
-Rodin       Hyper3D Rodin GLB generation
+Fal         Fal.ai queue GLB generation
 Hunyuan     Local Hunyuan3D GLB generation
 JS Depth    Browser-side image relief with layered PNG fallback
-Auto        Tripo, Rodin, Hunyuan, then JS Depth fallback
+Auto        Hyper3D, Tripo, Fal, Hunyuan, then JS Depth fallback
 Local GLB   Import an existing .glb or self-contained .gltf
 ```
 
 Tripo uploads use the current STS object-storage flow (`/upload/sts/token`) before creating an `image_to_model` task.
+Fal uploads use the official `@fal-ai/client` storage and queue APIs. Supported Fal models are Hunyuan3D v2, TRELLIS, TripoSR, Tripo3D v2.5, and Hyper3D Rodin. Pick the active Fal model in `Settings`.
 Rodin uploads use Hyper3D's multipart `/rodin` task API, then poll `/status` and cache the GLB returned by `/download`.
-Generated GLBs are cached by the Node backend under `.generated-models/`, so later views use the local copy instead of the temporary Tripo URL.
+Generated GLBs are cached by the Node backend under `.generated-models/`, so later views use the local copy instead of temporary provider URLs.
 
 You can also import a local `.glb` or self-contained `.gltf` from the Microscope View add button. Imported models become custom Cell Types and are served from the same local cache.
 

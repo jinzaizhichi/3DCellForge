@@ -5,6 +5,7 @@ import { GENERATION_MODE_OPTIONS } from '../config/appConfig.js'
 import { MICROSCOPE_IMAGES } from '../domain/cellData.js'
 import { getCell } from '../domain/cellCatalog.js'
 import { CellThumb } from './CellThumb.jsx'
+import { GenerationTaskCenter } from './GenerationTaskCenter.jsx'
 
 export function BottomDeck({
   selectedCell,
@@ -17,6 +18,8 @@ export function BottomDeck({
   customCells,
   onUploadImage,
   onCompare,
+  onOpenGenerationCell,
+  onRetryGeneration,
   onNotify,
 }) {
   const fileInputRef = useRef(null)
@@ -110,6 +113,13 @@ export function BottomDeck({
           </div>
         </button>
       </div>
+
+      <GenerationTaskCenter
+        customCells={customCells}
+        selectedCell={selectedCell}
+        onOpenCell={onOpenGenerationCell}
+        onRetryGeneration={onRetryGeneration}
+      />
     </section>
   )
 }

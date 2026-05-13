@@ -1,10 +1,13 @@
 import http from 'node:http'
-import { API_HOST, API_PORT, HUNYUAN_API_BASE, RODIN_API_KEY, TRIPO_API_KEY } from './server/config.mjs'
+import { API_HOST, API_PORT, FAL_API_KEY, HUNYUAN_API_BASE, RODIN_API_KEY, TRIPO_API_KEY } from './server/config.mjs'
 import { readJsonBody, sendJson, setCorsHeaders } from './server/http-utils.mjs'
 import { importLocalModel, proxyModel, serveLocalModel } from './server/model-store.mjs'
+import { createFalTask, getFalHealth, getFalTask } from './server/providers/fal.mjs'
 import { createHunyuanTask, getHunyuanHealth, getHunyuanTask } from './server/providers/hunyuan.mjs'
 import { createRodinTask, getRodinHealth, getRodinTask } from './server/providers/rodin.mjs'
 import { createTripoTask, getTripoHealth, getTripoTask } from './server/providers/tripo.mjs'
+
+const DEFAULT_GENERATION_PROVIDER = 'rodin'
 
 const server = http.createServer(async (request, response) => {
   try {
@@ -25,6 +28,7 @@ const server = http.createServer(async (request, response) => {
           tripo: getTripoHealth(),
           rodin: getRodinHealth(),
           hunyuan: getHunyuanHealth(),
+          fal: getFalHealth(),
         },
       })
       return
@@ -32,7 +36,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === 'POST' && url.pathname === '/api/3d/generate') {
       const payload = await readJsonBody(request)
-      const provider = payload.provider || 'tripo'
+      const provider = payload.provider || DEFAULT_GENERATION_PROVIDER
       const task = await createGenerationTask(provider, payload)
 
       sendJson(response, 200, task)
@@ -41,7 +45,7 @@ const server = http.createServer(async (request, response) => {
 
     if (request.method === 'GET' && url.pathname.startsWith('/api/3d/status/')) {
       const taskId = decodeURIComponent(url.pathname.replace('/api/3d/status/', ''))
-      const provider = url.searchParams.get('provider') || 'tripo'
+      const provider = url.searchParams.get('provider') || DEFAULT_GENERATION_PROVIDER
       const task = await getGenerationTask(provider, taskId)
 
       sendJson(response, 200, task)
@@ -83,17 +87,20 @@ server.listen(API_PORT, API_HOST, () => {
   console.log(`Bio demo API running at http://${API_HOST}:${API_PORT}`)
   console.log(TRIPO_API_KEY ? 'Tripo API key loaded from environment.' : 'TRIPO_API_KEY is missing. Add it to .env.local.')
   console.log(RODIN_API_KEY ? 'Rodin API key loaded from environment.' : 'RODIN_API_KEY is missing. Add it to .env.local.')
+  console.log(FAL_API_KEY ? 'Fal API key loaded from environment.' : 'FAL_API_KEY is missing. Add it to .env.local.')
   console.log(`Hunyuan3D local provider: ${HUNYUAN_API_BASE}`)
 })
 
 function createGenerationTask(provider, payload) {
   if (provider === 'hunyuan') return createHunyuanTask(payload)
-  if (provider === 'rodin') return createRodinTask(payload)
-  return createTripoTask(payload)
+  if (provider === 'fal') return createFalTask(payload)
+  if (provider === 'tripo') return createTripoTask(payload)
+  return createRodinTask(payload)
 }
 
 function getGenerationTask(provider, taskId) {
   if (provider === 'hunyuan') return getHunyuanTask(taskId)
-  if (provider === 'rodin') return getRodinTask(taskId)
-  return getTripoTask(taskId)
+  if (provider === 'fal') return getFalTask(taskId)
+  if (provider === 'tripo') return getTripoTask(taskId)
+  return getRodinTask(taskId)
 }

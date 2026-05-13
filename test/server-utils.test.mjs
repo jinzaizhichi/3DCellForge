@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 import { parseDataUrl, sanitizeFileName } from '../server/http-utils.mjs'
 import { getModelExtension, shouldAttachTripoAuth, validateModelBuffer } from '../server/model-store.mjs'
 import { findFirstValue, findModelUrl, isSuccessStatus } from '../server/object-utils.mjs'
+import { buildFalInput, decodeFalTaskId, encodeFalTaskId, findFalModelFile, normalizeFalModelId, normalizeFalStatus } from '../server/providers/fal.mjs'
 import { decodeRodinTaskId, encodeRodinTaskId, findRodinDownloadItem, normalizeRodinStatus } from '../server/providers/rodin.mjs'
+import { compactCustomCellsForStorage, persistCustomCells } from '../src/domain/cellPersistence.js'
 
 describe('server utility functions', () => {
   it('sanitizes uploaded filenames without losing readable words', () => {
@@ -74,5 +76,129 @@ describe('server utility functions', () => {
       }),
       { name: 'model.glb', url: 'https://cdn.example.com/signed-download' },
     )
+  })
+
+  it('normalizes Fal model ids, task ids, inputs, statuses, and model files', () => {
+    const task = { modelId: 'tripo3d/tripo/v2.5/image-to-3d', requestId: 'fal-request-1' }
+    const encoded = encodeFalTaskId(task)
+
+    assert.deepEqual(decodeFalTaskId(encoded), task)
+    assert.equal(normalizeFalModelId('tripo3d/tripo/v2.5/image-to-3d'), 'tripo3d/tripo/v2.5/image-to-3d')
+    assert.equal(normalizeFalModelId('fal-ai/tripo3d/v2.5/image-to-3d'), 'fal-ai/hunyuan3d/v2')
+    assert.equal(normalizeFalStatus('IN_QUEUE'), 'queued')
+    assert.equal(normalizeFalStatus('IN_PROGRESS'), 'running')
+    assert.equal(normalizeFalStatus('COMPLETED'), 'success')
+    assert.equal(normalizeFalStatus('ERROR'), 'failed')
+
+    assert.deepEqual(
+      buildFalInput('fal-ai/hunyuan3d/v2', 'https://cdn.example.com/input.png', { seed: 12 }),
+      { input_image_url: 'https://cdn.example.com/input.png', seed: 12 },
+    )
+    assert.deepEqual(
+      buildFalInput('fal-ai/hyper3d/rodin', 'https://cdn.example.com/input.png', { prompt: 'a detailed cell', seed: 7 }),
+      {
+        geometry_file_format: 'glb',
+        input_image_urls: ['https://cdn.example.com/input.png'],
+        material: 'PBR',
+        prompt: 'a detailed cell',
+        quality: 'medium',
+        seed: 7,
+        tier: 'Regular',
+      },
+    )
+
+    assert.deepEqual(
+      findFalModelFile({
+        base_model: { url: 'https://cdn.example.com/base.glb' },
+        pbr_model: { url: 'https://cdn.example.com/file', content_type: 'model/gltf-binary' },
+      }),
+      { url: 'https://cdn.example.com/file', ext: 'glb' },
+    )
+  })
+
+  it('compacts generated custom cells without dropping pending retry images first', () => {
+    const generated = {
+      id: 'custom-ready',
+      imageUrl: 'data:image/webp;base64,large',
+      generation: { status: 'success', modelUrl: '/api/3d/local-model/task.glb', rawModelUrl: 'https://signed.example.com/model.glb', message: 'ready' },
+    }
+    const pending = {
+      id: 'custom-pending',
+      imageUrl: 'data:image/webp;base64,source',
+      generation: { status: 'failed', modelUrl: '', rawModelUrl: '', message: 'retry possible' },
+    }
+
+    assert.deepEqual(
+      compactCustomCellsForStorage([generated, pending], 'generated-previews').map((cell) => cell.imageUrl),
+      ['', pending.imageUrl],
+    )
+    assert.deepEqual(
+      compactCustomCellsForStorage([generated, pending], 'minimal').map((cell) => ({
+        imageUrl: cell.imageUrl,
+        rawModelUrl: cell.generation.rawModelUrl,
+      })),
+      [
+        { imageUrl: '', rawModelUrl: '' },
+        { imageUrl: '', rawModelUrl: '' },
+      ],
+    )
+  })
+
+  it('falls back to compact custom-cell storage when localStorage quota fails', () => {
+    const writes = []
+    global.window = {
+      localStorage: {
+        setItem(key, value) {
+          writes.push({ key, value: JSON.parse(value) })
+          if (writes.length === 1) throw new Error('quota exceeded')
+        },
+      },
+    }
+
+    try {
+      const result = persistCustomCells([
+        {
+          id: 'custom-ready',
+          imageUrl: 'data:image/webp;base64,large',
+          generation: { status: 'success', modelUrl: '/api/3d/local-model/task.glb', rawModelUrl: 'https://signed.example.com/model.glb', message: 'ready' },
+        },
+      ])
+
+      assert.equal(result.stored, true)
+      assert.equal(result.compacted, true)
+      assert.equal(result.cells[0].imageUrl, '')
+      assert.equal(result.cells[0].generation.modelUrl, '/api/3d/local-model/task.glb')
+      assert.equal(writes.length, 2)
+    } finally {
+      delete global.window
+    }
+  })
+
+  it('keeps compacted custom-cell array identity when storage remains unavailable', () => {
+    global.window = {
+      localStorage: {
+        setItem() {
+          throw new Error('storage unavailable')
+        },
+      },
+    }
+
+    try {
+      const compacted = [
+        {
+          id: 'custom-ready',
+          imageUrl: '',
+          previewDropped: true,
+          generation: { status: 'success', modelUrl: '/api/3d/local-model/task.glb', rawModelUrl: '', message: 'ready' },
+        },
+      ]
+      const result = persistCustomCells(compacted)
+
+      assert.equal(result.stored, false)
+      assert.equal(result.compacted, true)
+      assert.equal(result.cells, compacted)
+    } finally {
+      delete global.window
+    }
   })
 })

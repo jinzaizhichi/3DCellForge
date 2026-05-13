@@ -27,21 +27,21 @@ export async function readApiResponse(response) {
 }
 
 export function getProviderPlan(provider) {
-  return provider === 'auto' ? ['tripo', 'rodin', 'hunyuan', 'cinematic'] : [provider || 'tripo']
+  return provider === 'auto' ? ['rodin', 'tripo', 'fal', 'hunyuan', 'cinematic'] : [provider || 'rodin']
 }
 
 export function getProviderLabel(provider) {
   if (provider === 'local') return 'Local'
   if (provider === 'cinematic') return 'JS Depth'
   if (provider === 'reference') return 'Khronos Reference'
-  return GENERATION_PROVIDER_OPTIONS.find((item) => item.id === provider)?.label ?? 'Tripo'
+  return GENERATION_PROVIDER_OPTIONS.find((item) => item.id === provider)?.label ?? 'Hyper3D'
 }
 
-export async function create3dGeneration({ provider, imageDataUrl, fileName, prompt }) {
+export async function create3dGeneration({ provider, imageDataUrl, fileName, prompt, modelId }) {
   const response = await fetch(apiUrl('/api/3d/generate'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ provider, imageDataUrl, fileName, prompt }),
+    body: JSON.stringify({ provider, imageDataUrl, fileName, prompt, modelId }),
   })
 
   return readApiResponse(response)
@@ -58,7 +58,7 @@ export async function uploadLocal3dModel(file) {
 }
 
 export async function get3dGenerationStatus(taskId, provider) {
-  const response = await fetch(apiUrl(`/api/3d/status/${encodeURIComponent(taskId)}?provider=${encodeURIComponent(provider || 'tripo')}`))
+  const response = await fetch(apiUrl(`/api/3d/status/${encodeURIComponent(taskId)}?provider=${encodeURIComponent(provider || 'rodin')}`))
   return readApiResponse(response)
 }
 

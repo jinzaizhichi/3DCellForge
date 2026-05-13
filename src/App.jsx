@@ -22,6 +22,7 @@ import {
   inferCellTemplate,
   isLocalModelFile,
 } from './domain/cellCatalog.js'
+import { persistCustomCells } from './domain/cellPersistence.js'
 import { normalizeSettings, normalizeUiState } from './domain/preferences.js'
 import { downloadBlob, downloadJson } from './lib/downloads.js'
 import { prepareImageForUpload } from './lib/imagePipeline.js'
@@ -70,7 +71,11 @@ function App() {
   }, [settings])
 
   useEffect(() => {
-    storeValue(CUSTOM_CELL_STORAGE_KEY, customCells)
+    const persisted = persistCustomCells(customCells)
+    if (persisted.cells !== customCells) {
+      setCustomCells(persisted.cells)
+      setUploadedImage(getUploadPreviewFromCustomCells(persisted.cells))
+    }
   }, [customCells])
 
   useEffect(() => {
@@ -188,8 +193,7 @@ function App() {
             }
           : cell
       ))
-      storeValue(CUSTOM_CELL_STORAGE_KEY, next)
-      return next
+      return persistCustomCells(next).cells
     })
   }
 
@@ -207,6 +211,7 @@ function App() {
             provider: 'cinematic',
             requestedProvider,
             status: 'local',
+            progress: 100,
             modelUrl: '',
             rawModelUrl: '',
             message: 'JS depth relief is ready.',
@@ -223,6 +228,7 @@ function App() {
             provider,
             requestedProvider,
             status: 'uploading',
+            progress: 0,
             modelUrl: '',
             rawModelUrl: '',
             message: `Sending image to ${label}.`,
@@ -235,6 +241,7 @@ function App() {
           imageDataUrl: imageUrl,
           fileName,
           prompt: getGenerationPrompt(customCell),
+          modelId: provider === 'fal' ? settings.falModelId : undefined,
         })
 
         updateCustomCell(customCell.id, (cell) => ({
@@ -243,6 +250,7 @@ function App() {
             provider,
             requestedProvider,
             status: 'processing',
+            progress: 0,
             taskId: task.taskId,
             message: `${label} is generating the GLB model.`,
           },
@@ -256,6 +264,7 @@ function App() {
               provider,
               requestedProvider,
               status: status.status || 'processing',
+              progress: status.progress ?? cell.generation?.progress ?? null,
               taskId: task.taskId,
               message: status.progress ? `${label} progress ${status.progress}%` : `${label} status: ${status.status || 'processing'}`,
             },
@@ -268,6 +277,7 @@ function App() {
             provider,
             requestedProvider,
             status: 'success',
+            progress: 100,
             taskId: task.taskId,
             modelUrl: finalStatus.modelUrl,
             rawModelUrl: finalStatus.rawModelUrl,
@@ -287,6 +297,7 @@ function App() {
               provider,
               requestedProvider,
               status: 'processing',
+              progress: null,
               message: `${label} failed; trying ${getProviderLabel(providers[providers.indexOf(provider) + 1])}.`,
             },
           }))
@@ -319,6 +330,7 @@ function App() {
           ...current.generation,
           requestedProvider: settings.generationMode,
           status: 'failed',
+          progress: null,
           modelUrl: '',
           rawModelUrl: '',
           message: error instanceof Error ? error.message : '3D generation failed.',
@@ -350,12 +362,12 @@ function App() {
         provider: requestedMode,
         requestedProvider: requestedMode,
         status: 'uploading',
+        progress: 0,
         message: requestedMode === 'cinematic' ? 'Building browser-side JS depth relief.' : 'Sending image to backend.',
       }
-      const nextCustomCells = [customCell, ...customCells].slice(0, 8)
+      const nextCustomCells = persistCustomCells([customCell, ...customCells].slice(0, 8)).cells
 
       setCustomCells(nextCustomCells)
-      storeValue(CUSTOM_CELL_STORAGE_KEY, nextCustomCells)
       setUploadedImage({ name: file.name, url: displayUrl })
       setSelectedCell(customCell.id)
       setSelectedOrganelle(getDefaultOrganelle(customCell.id, nextCustomCells))
@@ -370,6 +382,7 @@ function App() {
             ...cell.generation,
             requestedProvider: settings.generationMode,
             status: 'failed',
+            progress: null,
             message: error instanceof Error ? error.message : '3D generation failed.',
           },
         }))
@@ -388,12 +401,12 @@ function App() {
         requestedProvider: 'local',
         type: 'Local 3D Model',
         status: 'uploading',
+        progress: 0,
         message: 'Saving model to local cache.',
       })
-      const nextCustomCells = [customCell, ...customCells].slice(0, 8)
+      const nextCustomCells = persistCustomCells([customCell, ...customCells].slice(0, 8)).cells
 
       setCustomCells(nextCustomCells)
-      storeValue(CUSTOM_CELL_STORAGE_KEY, nextCustomCells)
       setUploadedImage({ name: file.name, url: '' })
       setSelectedCell(customCell.id)
       setSelectedOrganelle(getDefaultOrganelle(customCell.id, nextCustomCells))
@@ -407,6 +420,7 @@ function App() {
           provider: 'local',
           requestedProvider: 'local',
           status: 'success',
+          progress: 100,
           taskId: localModel.taskId,
           modelUrl: localModel.modelUrl,
           rawModelUrl: '',
@@ -423,6 +437,7 @@ function App() {
             provider: 'local',
             requestedProvider: 'local',
             status: 'failed',
+            progress: null,
             message: error instanceof Error ? error.message : 'Local model import failed.',
           },
         }))
@@ -452,9 +467,8 @@ function App() {
     const deleted = customCells.find((cell) => cell.id === cellId)
     if (!deleted) return
 
-    const nextCustomCells = customCells.filter((cell) => cell.id !== cellId)
+    const nextCustomCells = persistCustomCells(customCells.filter((cell) => cell.id !== cellId)).cells
     setCustomCells(nextCustomCells)
-    storeValue(CUSTOM_CELL_STORAGE_KEY, nextCustomCells)
     setGalleryItems((items) => items.filter((item) => item.cellId !== cellId))
     setNotes((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${cellId}:`))))
 
@@ -594,6 +608,8 @@ function App() {
               compareCell={compareCell}
               customCells={customCells}
               onCompare={handleOpenCompare}
+              onOpenGenerationCell={handleSelectCell}
+              onRetryGeneration={handleRetryGeneration}
               onNotify={setToast}
             />
           </div>

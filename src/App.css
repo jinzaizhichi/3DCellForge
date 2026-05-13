@@ -403,6 +403,23 @@
   accent-color: #72a4bf;
 }
 
+.settings-select {
+  min-width: 172px;
+  max-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid rgba(112, 101, 84, 0.2);
+  border-radius: 8px;
+  color: #3b3f40;
+  background: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 12px;
+}
+
+.settings-select:focus-visible {
+  outline: 2px solid rgba(82, 142, 170, 0.48);
+  outline-offset: 2px;
+}
+
 .segmented {
   display: inline-grid;
   grid-template-columns: repeat(2, auto);
@@ -1949,6 +1966,107 @@
   background: rgba(228, 242, 248, 0.72);
 }
 
+.task-panel {
+  grid-column: 1 / -1;
+  min-height: 0;
+}
+
+.task-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 12px 12px;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px 24px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid rgba(119, 104, 76, 0.14);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.42);
+}
+
+.task-row.active {
+  border-color: rgba(82, 142, 170, 0.44);
+  background: rgba(228, 242, 248, 0.68);
+}
+
+.task-open {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-open strong,
+.task-open small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-open strong {
+  color: #39312c;
+  font-size: 10px;
+}
+
+.task-open small {
+  color: #81776b;
+  font-size: 9px;
+}
+
+.task-state,
+.task-retry {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(119, 104, 76, 0.14);
+  border-radius: 8px;
+  color: #81776b;
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.task-state.active {
+  color: #2f6b8a;
+  background: rgba(228, 242, 248, 0.78);
+}
+
+.task-state.done {
+  color: #42794f;
+  background: rgba(231, 243, 225, 0.78);
+}
+
+.task-state.failed {
+  color: #9c4e4f;
+  background: rgba(252, 233, 231, 0.82);
+}
+
+.task-retry {
+  cursor: pointer;
+}
+
+.task-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 54px;
+  padding: 0 12px 12px;
+  color: #81776b;
+  font-size: 10px;
+}
+
 .micro-card span {
   width: 100%;
   height: 36px;
@@ -3060,8 +3178,7 @@ input:focus-visible + i {
   z-index: 28;
   inset: 0;
   border: 0;
-  background: rgba(10, 34, 44, 0.06);
-  backdrop-filter: blur(1px);
+  background: transparent;
 }
 
 .inspector-close {
@@ -3093,11 +3210,13 @@ input:focus-visible + i {
   position: static;
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: auto auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   align-content: start;
   gap: 10px;
   width: 100%;
   height: 100%;
+  overflow: auto;
+  scrollbar-width: thin;
 }
 
 .command-zone .panel {
@@ -3114,6 +3233,16 @@ input:focus-visible + i {
 
 .command-zone .generation-mode-pills {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.command-zone .task-panel {
+  grid-column: auto;
+  min-height: 150px;
+}
+
+.command-zone .task-list {
+  max-height: 240px;
+  overflow: auto;
 }
 
 .command-zone .micro-grid {
