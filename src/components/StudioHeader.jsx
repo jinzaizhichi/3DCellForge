@@ -1,9 +1,9 @@
-import { BookOpen, ChevronDown, Dna, Grid3X3, Library, Settings } from 'lucide-react'
+import { BookOpen, ChevronDown, Dna, Grid3X3, Library, MonitorPlay, Settings } from 'lucide-react'
 
 import { CELL_TYPES } from '../domain/cellData.js'
 import { CellThumb } from './CellThumb.jsx'
 
-export function StudioHeader({ activePanel, setActivePanel, onNotify }) {
+export function StudioHeader({ activePanel, setActivePanel, demoMode, onToggleDemoMode, onNotify }) {
   function openPanel(panel) {
     const next = activePanel === panel ? null : panel
     setActivePanel(next)
@@ -37,6 +37,10 @@ export function StudioHeader({ activePanel, setActivePanel, onNotify }) {
         <button type="button" className={activePanel === 'Settings' ? 'active' : ''} onClick={() => openPanel('Settings')}>
           <Settings size={15} />
           Settings
+        </button>
+        <button type="button" className={demoMode ? 'active' : ''} onClick={onToggleDemoMode}>
+          <MonitorPlay size={15} />
+          Demo
         </button>
       </nav>
       <button type="button" className={activePanel === 'Profile' ? 'profile-button active' : 'profile-button'} onClick={() => openPanel('Profile')}>

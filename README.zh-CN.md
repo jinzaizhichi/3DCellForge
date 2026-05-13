@@ -4,7 +4,7 @@
 
 AI 驱动的交互式 3D 细胞生成与探索工作台。
 
-3DCellForge 是一个 React + Three.js 原型，用于在浏览器里展示高质感的细胞 3D 场景。它支持 WebGL 拖拽旋转、滚轮缩放、细胞器信息面板、截图、GLB 导出，以及通过 Tripo / Hunyuan3D / 本地模型导入生成或加载真实 3D 模型。
+3DCellForge 是一个 React + Three.js 原型，用于在浏览器里展示高质感的细胞 3D 场景。它支持 WebGL 拖拽旋转、滚轮缩放、左侧细胞类型 / 中央 3D 舞台 / 右侧工具区的工作台布局、截图、GLB 导出、历史上传默认收起、Demo 演示模式，以及通过 Tripo / Rodin / Hunyuan3D / JS Depth / 本地模型导入生成或加载 3D 模型。
 
 ## 演示视频
 
@@ -15,11 +15,13 @@ AI 驱动的交互式 3D 细胞生成与探索工作台。
 ## 功能
 
 - 基于 React Three Fiber 的交互式细胞查看器。
-- 支持拖拽旋转、滚轮缩放、3D Proof 模式切换。
-- 细胞器详情卡、显微镜参考图、对比面板、生物学笔记和图库操作。
-- 通过本地 Node 后端调用 Tripo 云端 image-to-3D。
-- 支持 Hunyuan3D 本地服务作为备用生成路径。
-- 支持导入本地 `.glb` / 自包含 `.gltf` 模型。
+- 三栏工作台：左侧 Cell Types，中间 WebGL 主舞台，右侧显微镜和生成工具。
+- 支持拖拽旋转、滚轮缩放、结构隔离、细胞器 Inspect 和场景导出。
+- Demo Mode 会隐藏左右工具区，只保留干净的大模型画面，适合截图和录屏。
+- Recent Uploads 默认收起，历史上传 / 生成 / 导入模型不会持续干扰主列表。
+- 自定义上传记录支持删除，并同步清理相关本地数据。
+- 细胞器详情抽屉、显微镜参考图、对比面板、生物学笔记和图库操作。
+- 支持 Tripo、Rodin、Hunyuan3D、JS Depth 和 Local GLB 多种模式。
 - 生成后的 GLB 会缓存到本地，方便后续演示和截图。
 - 内置 Khronos glTF 辅助参考模型，用于检查 GLB 加载和 PBR 材质表现。
 - API Key 只放在服务端 `.env.local`，不会暴露到前端包里。
@@ -43,6 +45,24 @@ npm run dev
 ```
 
 打开终端里显示的 Vite 地址即可。
+
+## 工作台流程
+
+默认页面会尽量减少干扰：
+
+- 左侧 `Cell Types` 默认只显示官方细胞类型。
+- 上传、生成、导入过的自定义模型会收进 `Recent Uploads`，默认折叠。
+- 右侧 `Microscope View` 用来选择生成模式或导入本地 `.glb` / `.gltf`。
+- 需要细胞器说明时，再点击 `Info` 或 `Inspect` 打开详情抽屉。
+- 顶部点击 `Demo` 进入纯展示模式，适合截图、录屏、演示。
+
+常用验证命令：
+
+```bash
+npm run lint
+npm run build
+npm run test
+```
 
 ## 可选 Image-to-3D 后端
 

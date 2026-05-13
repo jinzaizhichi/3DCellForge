@@ -4,7 +4,7 @@
 
 AI-powered interactive 3D cell generation and exploration studio.
 
-3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, organelle panels, screenshots, GLB export, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
+3DCellForge is a React + Three.js prototype for exploring biological cell models in a polished browser UI. It supports live WebGL orbit controls, a left-cell / center-stage / right-tools workbench, screenshots, GLB export, collapsed upload history, demo presentation mode, and optional image-to-3D providers for generating real 3D models from uploaded reference images.
 
 ## Demo
 
@@ -15,10 +15,12 @@ Open the demo video: [3DCellForge-demo-2026-05-10.mp4](docs/demo/3DCellForge-dem
 ## Features
 
 - Interactive cell viewer built with React Three Fiber.
-- Drag to rotate, scroll to zoom, and toggle 3D proof mode.
-- Organelle detail cards, microscope references, comparison panel, notes, and gallery actions.
-- Tripo cloud image-to-3D pipeline through a local Node backend.
-- Hunyuan3D local provider support as a backup generation path.
+- Three-column workbench: Cell Types on the left, WebGL stage in the center, microscope/generation tools on the right.
+- Drag to rotate, scroll to zoom, isolate structures, inspect organelles, and export the current scene.
+- Demo Mode for screenshots and screen recordings: hides side panels and keeps the model stage clean.
+- Recent Uploads stays collapsed by default, with delete controls for custom generated/imported cells.
+- Organelle detail drawer, microscope references, comparison panel, notes, and gallery actions.
+- Tripo, Rodin, Hunyuan3D, JS Depth, and Local GLB generation/import modes.
 - Cached demo GLB models for offline-friendly screenshots and demos.
 - Auxiliary Khronos glTF reference models for GLB loader and PBR material checks.
 - API key stays server-side in `.env.local`; it is never exposed to the frontend bundle.
@@ -42,6 +44,24 @@ npm run dev
 ```
 
 Open the Vite URL shown in the terminal.
+
+## Workbench Workflow
+
+The default screen is intentionally quiet:
+
+- Pick official cells from the left `Cell Types` rail.
+- Uploaded/generated/custom cells are tucked under `Recent Uploads` until expanded.
+- Use the right `Microscope View` rail to choose the generation provider or import a local `.glb` / `.gltf`.
+- Click `Info` or `Inspect` only when you need the organelle detail drawer.
+- Click `Demo` in the top navigation to enter a clean presentation mode for screenshots and recordings.
+
+Useful validation commands:
+
+```bash
+npm run lint
+npm run build
+npm run test
+```
 
 ## Optional Image-to-3D Backend
 

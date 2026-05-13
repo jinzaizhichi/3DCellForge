@@ -75,9 +75,12 @@
 
 .studio-nav button,
 .profile-button,
+.demo-exit-button,
 .stage-toolbar button,
 .viewer-controls button,
 .cell-row,
+.cell-delete,
+.recent-toggle,
 .organelle-row,
 .micro-card,
 .add-image,
@@ -2889,6 +2892,75 @@ input:focus-visible + i {
   padding: 9px 10px;
 }
 
+.selection-shelf .cell-row-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.selection-shelf .cell-row-shell.can-delete .cell-row {
+  padding-right: 36px;
+}
+
+.selection-shelf .cell-row.compact {
+  min-height: 52px;
+}
+
+.selection-shelf .cell-delete {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+  color: #8a6270;
+  background: rgba(255, 255, 255, 0.64);
+  transform: translateY(-50%);
+}
+
+.selection-shelf .cell-delete:hover {
+  color: #b5455e;
+  background: rgba(255, 235, 240, 0.92);
+}
+
+.recent-cells {
+  display: grid;
+  gap: 7px;
+  padding-top: 2px;
+}
+
+.recent-toggle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 7px 9px;
+  border: 1px dashed rgba(111, 92, 137, 0.24);
+  border-radius: 9px;
+  color: #6f5c89;
+  background: rgba(255, 255, 255, 0.45);
+  font-size: 10px;
+  font-weight: 780;
+  text-align: left;
+}
+
+.recent-toggle small {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  color: #2f6b8a;
+  background: rgba(222, 241, 248, 0.88);
+}
+
+.recent-cell-list {
+  display: grid;
+  gap: 6px;
+}
+
 .selection-shelf .cell-row strong {
   display: -webkit-box;
   overflow: hidden;
@@ -3088,6 +3160,68 @@ input:focus-visible + i {
 .workbench-v2 .status-toast {
   right: 26px;
   bottom: 26px;
+}
+
+.demo-exit-button {
+  position: absolute;
+  z-index: 48;
+  top: 16px;
+  right: 16px;
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(108, 176, 204, 0.46);
+  border-radius: 999px;
+  color: #275f83;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 16px 42px rgba(32, 75, 92, 0.18);
+  font-weight: 800;
+  backdrop-filter: blur(18px);
+}
+
+.workbench-v2.demo-mode {
+  --header-height: 0px;
+  --side-width: 0px;
+  --tool-width: 0px;
+}
+
+.workbench-v2.demo-mode .studio-header {
+  height: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+}
+
+.workbench-v2.demo-mode .selection-shelf,
+.workbench-v2.demo-mode .command-zone,
+.workbench-v2.demo-mode .workspace-drawer,
+.workbench-v2.demo-mode .inspector-trigger,
+.workbench-v2.demo-mode .stage-title,
+.workbench-v2.demo-mode .stage-status,
+.workbench-v2.demo-mode .viewer-controls,
+.workbench-v2.demo-mode .custom-reference-layer {
+  display: none;
+}
+
+.workbench-v2.demo-mode .stage-zone {
+  top: var(--workbench-gap);
+  right: var(--workbench-gap);
+  bottom: var(--workbench-gap);
+  left: var(--workbench-gap);
+}
+
+.workbench-v2.demo-mode .stage-panel {
+  --render-width: min(1320px, 94%);
+  --render-max-height: 114%;
+  --render-translate-x: 26px;
+  --render-translate-y: 18px;
+}
+
+.workbench-v2.demo-mode .stage-toolbar {
+  left: 50%;
+  right: auto;
+  width: min(760px, calc(100% - 64px));
+  transform: translateX(-50%);
 }
 
 @media (min-width: 1600px) {

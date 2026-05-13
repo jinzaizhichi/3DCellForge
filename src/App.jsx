@@ -45,6 +45,7 @@ function App() {
   const [crossSection, setCrossSection] = useState(() => initialUiStateRef.current.crossSection)
   const [activePanel, setActivePanel] = useState(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [demoMode, setDemoMode] = useState(false)
   const [toast, setToast] = useState('Plant cell ready')
   const [favoriteKey, setFavoriteKey] = useState(() => initialUiStateRef.current.favoriteKey)
   const [selectedMicroscope, setSelectedMicroscope] = useState(() => initialUiStateRef.current.selectedMicroscope)
@@ -125,6 +126,18 @@ function App() {
   function openInspector() {
     setActivePanel(null)
     setInspectorOpen(true)
+  }
+
+  function toggleDemoMode() {
+    setDemoMode((current) => {
+      const next = !current
+      if (next) {
+        setActivePanel(null)
+        setInspectorOpen(false)
+      }
+      setToast(next ? 'Demo mode enabled' : 'Workbench mode restored')
+      return next
+    })
   }
 
   async function handleExport() {
@@ -435,6 +448,27 @@ function App() {
     setToast('Gallery cleared')
   }
 
+  function handleDeleteCustomCell(cellId) {
+    const deleted = customCells.find((cell) => cell.id === cellId)
+    if (!deleted) return
+
+    const nextCustomCells = customCells.filter((cell) => cell.id !== cellId)
+    setCustomCells(nextCustomCells)
+    storeValue(CUSTOM_CELL_STORAGE_KEY, nextCustomCells)
+    setGalleryItems((items) => items.filter((item) => item.cellId !== cellId))
+    setNotes((current) => Object.fromEntries(Object.entries(current).filter(([key]) => !key.startsWith(`${cellId}:`))))
+
+    if (selectedCell === cellId) {
+      setSelectedCell('plant')
+      setSelectedOrganelle(getDefaultOrganelle('plant', nextCustomCells))
+      setCompareCell(getCellProfile('plant', nextCustomCells).compareTarget)
+      setInspectorOpen(false)
+    }
+
+    setUploadedImage(getUploadPreviewFromCustomCells(nextCustomCells))
+    setToast(`${deleted.name} removed`)
+  }
+
   function handleUpdateNote(noteKey, value) {
     setNotes((current) => {
       const next = { ...current }
@@ -452,8 +486,8 @@ function App() {
 
   return (
     <main className={settings.compactUi ? 'studio-shell compact-ui' : 'studio-shell'}>
-      <motion.div className="studio-window workbench-v2" initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38 }}>
-        <StudioHeader activePanel={activePanel} setActivePanel={setActivePanel} onNotify={setToast} />
+      <motion.div className={demoMode ? 'studio-window workbench-v2 demo-mode' : 'studio-window workbench-v2'} initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.38 }}>
+        <StudioHeader activePanel={activePanel} setActivePanel={setActivePanel} demoMode={demoMode} onToggleDemoMode={toggleDemoMode} onNotify={setToast} />
         <WorkspaceDrawer
           activePanel={activePanel}
           selectedCell={selectedCell}
@@ -484,6 +518,11 @@ function App() {
           onNotify={setToast}
         />
         <StatusToast message={toast} />
+        {demoMode && (
+          <button type="button" className="demo-exit-button" onClick={toggleDemoMode}>
+            Exit Demo
+          </button>
+        )}
         <div className="studio-workbench-v2">
           <div className="stage-zone">
             <CenterStage
@@ -509,6 +548,7 @@ function App() {
               selectedOrganelle={selectedOrganelle}
               setSelectedOrganelle={setSelectedOrganelle}
               customCells={customCells}
+              onDeleteCustomCell={handleDeleteCustomCell}
             />
           </div>
 
