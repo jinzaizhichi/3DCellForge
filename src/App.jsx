@@ -22,7 +22,6 @@ import {
   getGenerationPrompt,
   getOrganelleDetail,
   getUploadPreviewFromCustomCells,
-  inferCellTemplate,
   isLocalModelFile,
 } from './domain/cellCatalog.js'
 import { persistCustomCells } from './domain/cellPersistence.js'
@@ -570,7 +569,7 @@ function App() {
         provider: requestedMode,
         requestedProvider: requestedMode,
         thumbnailUrl: thumbnailUrl || displayUrl,
-        type: requestedMode === 'cinematic' ? `JS Depth preview · ${getCell(inferCellTemplate(file.name)).name} fallback` : undefined,
+        type: requestedMode === 'cinematic' ? 'JS Depth preview asset' : undefined,
       })
       customCell.generation = {
         ...customCell.generation,
@@ -1003,7 +1002,7 @@ function App() {
     const comparisonCells = providers.map((provider) => createCustomCell(`${sourceCell.name} ${getProviderLabel(provider)} compare.png`, sourceCell.imageUrl, {
       provider,
       requestedProvider: provider,
-      type: `${getProviderLabel(provider)} compare · ${getCell(sourceCell.template).name} fallback`,
+      type: `${getProviderLabel(provider)} provider comparison`,
     }))
 
     setCustomCells((current) => {
@@ -1074,6 +1073,7 @@ function App() {
           onDeleteGalleryItem={handleDeleteGalleryItem}
           onDownloadGalleryImage={handleDownloadGalleryImage}
           onExportGallery={handleExportGallery}
+          onDeleteCustomCell={handleDeleteCustomCell}
           onClearGenerationHistory={handleClearGenerationHistory}
           onUpdateNote={handleUpdateNote}
           onGenerateNote={handleGenerateNote}

@@ -60,12 +60,12 @@ export function getCellProfile(cellId, customCells = getStoredCustomCells()) {
         ? 'Browser-generated JS depth relief from the uploaded image. This is a visual fallback, not a real GLB mesh.'
         : hasGeneratedModel
         ? 'AI-generated GLB from the uploaded image, loaded as an interactive WebGL model.'
-        : `Uploaded image queued for image-to-3D generation; ${getCell(customCell.template).name} is only the temporary fallback scaffold.`,
+        : 'Uploaded source asset queued for image-to-3D generation. A procedural preview is used only while the GLB is unavailable.',
       comparison: isCinematic
         ? 'This custom sample uses a browser-generated displacement mesh plus transparent depth slabs, not a GLB or full AI-generated mesh.'
         : hasGeneratedModel
         ? 'This custom sample is loaded as a real generated GLB in the WebGL viewer.'
-        : `This custom sample will use the ${getCell(customCell.template).name} fallback while generation is running.`,
+        : 'This custom sample will use a generic procedural preview while generation is running.',
       occurs: 'Uploaded by the user as a custom 3D model source.',
       organelles: ORGANELLE_ORDER,
     }
@@ -137,7 +137,7 @@ export function createCustomCell(fileName, imageUrl, options = {}) {
     name: name.length > 20 ? `${name.slice(0, 20)}...` : name,
     fullName: name,
     sourceFileName: fileName,
-    type: options.type || `Uploaded 3D Model · ${base.name} fallback`,
+    type: options.type || 'Uploaded 3D Asset',
     accent: base.accent,
     custom: true,
     template,

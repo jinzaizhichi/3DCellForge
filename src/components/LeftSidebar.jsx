@@ -9,14 +9,18 @@ const READY_STATUSES = new Set(['success', 'local'])
 
 export function LeftSidebar({ selectedCell, setSelectedCell, customCells, onDeleteCustomCell, onRetryGeneration }) {
   const [recentOpen, setRecentOpen] = useState(false)
-  const latestCustomCell = customCells.find((cell) => cell.custom && !cell.reference)
-  const recentCells = customCells.filter((cell) => cell.custom && !cell.reference && cell.id !== latestCustomCell?.id)
-  const queueItems = customCells.filter((cell) => cell.custom && !cell.reference && cell.generation)
+  const libraryCells = customCells.filter((cell) => cell.custom && !cell.reference)
+  const selectedCustomCell = libraryCells.find((cell) => cell.id === selectedCell)
+  const activeAsset = selectedCustomCell || libraryCells[0]
+  const recentCells = libraryCells.filter((cell) => cell.id !== activeAsset?.id)
+  const queueItems = libraryCells.filter((cell) => cell.generation)
   const storedCustomIds = new Set(customCells.map((cell) => cell.id))
   const queueCount = queueItems.filter((cell) => ACTIVE_STATUSES.has(String(cell.generation?.status || '').toLowerCase())).length || queueItems.length
 
   function renderCellRow(cell, { compact = false } = {}) {
     const canDelete = storedCustomIds.has(cell.id)
+    const generation = cell.generation || {}
+    const status = formatQueueStatus(String(generation.status || 'ready').toLowerCase(), generation.progress)
 
     return (
       <div key={cell.id} className={canDelete ? 'cell-row-shell can-delete' : 'cell-row-shell'}>
@@ -28,7 +32,7 @@ export function LeftSidebar({ selectedCell, setSelectedCell, customCells, onDele
           <CellThumb cell={cell} selected={selectedCell === cell.id} />
           <span>
             <strong>{cell.name}</strong>
-            <small>{cell.type}</small>
+            <small>{getProviderLabel(generation.provider || generation.requestedProvider)} · {status}</small>
           </span>
           {!canDelete && selectedCell === cell.id && <Heart size={13} fill="currentColor" />}
         </button>
@@ -51,16 +55,16 @@ export function LeftSidebar({ selectedCell, setSelectedCell, customCells, onDele
           </span>
           <ChevronDown size={14} />
         </header>
-        {latestCustomCell && (
+        {activeAsset && (
           <div className="pinned-models">
             <div className="pinned-model-block">
-              <span className="model-section-label">Latest Upload</span>
-              {renderCellRow(latestCustomCell)}
+              <span className="model-section-label">{selectedCustomCell ? 'Active Asset' : 'Latest Asset'}</span>
+              {renderCellRow(activeAsset)}
             </div>
           </div>
         )}
         <div className="cell-list">
-          {!latestCustomCell && recentCells.length === 0 && (
+          {!activeAsset && recentCells.length === 0 && (
             <div className="library-empty">
               <SparklesIcon size={16} />
               <span>No saved models yet.</span>
@@ -70,7 +74,7 @@ export function LeftSidebar({ selectedCell, setSelectedCell, customCells, onDele
           {recentCells.length > 0 && (
             <div className="recent-cells">
               <button type="button" className="recent-toggle" onClick={() => setRecentOpen((value) => !value)} aria-expanded={recentOpen}>
-                <span>Older Uploads</span>
+                <span>Saved Assets</span>
                 <small>{recentCells.length}</small>
                 <ChevronDown size={13} />
               </button>

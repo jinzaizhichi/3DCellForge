@@ -1,20 +1,20 @@
 import plantCellRender from '../assets/cell-plant-render.png'
 
 export const CELL_TYPES = [
-  { id: 'plant', name: 'Plant Cell', type: 'Eukaryotic Cell', accent: '#82b366' },
-  { id: 'white-blood', name: 'White Blood Cell', type: 'Immune Cell', accent: '#7e6edb' },
-  { id: 'neuron', name: 'Neuron', type: 'Nerve Cell', accent: '#8b5cf6' },
-  { id: 'epithelial', name: 'Epithelial Cell', type: 'Human Tissue Cell', accent: '#e07a7a' },
-  { id: 'bacteria', name: 'Bacteria Cell', type: 'Prokaryotic Cell', accent: '#5fbf9f' },
-  { id: 'animal', name: 'Animal Cell', type: 'Eukaryotic Cell', accent: '#459ccf' },
-  { id: 'muscle', name: 'Muscle Cell', type: 'Muscle Fiber', accent: '#d25762' },
+  { id: 'plant', name: 'Plant Specimen', type: 'Starter Asset', accent: '#82b366' },
+  { id: 'white-blood', name: 'Immune Specimen', type: 'Starter Asset', accent: '#7e6edb' },
+  { id: 'neuron', name: 'Neuron Specimen', type: 'Starter Asset', accent: '#8b5cf6' },
+  { id: 'epithelial', name: 'Tissue Specimen', type: 'Starter Asset', accent: '#e07a7a' },
+  { id: 'bacteria', name: 'Microbe Specimen', type: 'Starter Asset', accent: '#5fbf9f' },
+  { id: 'animal', name: 'Organic Specimen', type: 'Starter Asset', accent: '#459ccf' },
+  { id: 'muscle', name: 'Fiber Specimen', type: 'Starter Asset', accent: '#d25762' },
 ]
 
 export const SEEDED_GENERATED_CELLS = [
   {
     id: 'tripo-epithelial-test',
-    name: 'Tripo Epithelial Test',
-    type: 'AI Generated Epithelial Cell',
+    name: 'Tripo Tissue Test',
+    type: 'Cached AI Asset',
     accent: '#e07a7a',
     custom: true,
     template: 'epithelial',
@@ -31,7 +31,7 @@ export const SEEDED_GENERATED_CELLS = [
   {
     id: 'tripo-plant-test',
     name: 'Tripo Plant Test',
-    type: 'AI Generated Plant Cell',
+    type: 'Cached AI Asset',
     accent: '#82b366',
     custom: true,
     template: 'plant',
@@ -79,7 +79,7 @@ export const KHRONOS_REFERENCE_CELLS = [
     reference: true,
     template: 'animal',
     imageUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/TransmissionRoughnessTest/screenshot/screenshot-large.png',
-    referenceSummary: 'Official Khronos glTF sample for transmission, IOR, roughness, and volume. Useful for soft translucent cell walls and membrane haze.',
+    referenceSummary: 'Official Khronos glTF sample for transmission, IOR, roughness, and volume. Useful for soft translucent shells and layered material haze.',
     referenceLicense: 'CC-BY 4.0, Ed Mackey / Analytical Graphics via Khronos glTF Sample Models',
     referenceSource: 'https://github.com/KhronosGroup/glTF-Sample-Models/tree/main/2.0/TransmissionRoughnessTest',
     generation: {
@@ -180,7 +180,7 @@ export const MICROSCOPE_IMAGES = [
 export const WORKSPACE_PANELS = {
   Gallery: 'Saved render angles, thumbnails, and exported presentation shots.',
   Library: 'Starter models, generated assets, local imports, and reference GLB files.',
-  Notebooks: 'Observation notes linked to the selected model and structure part.',
+  Notebooks: 'Observation notes linked to the selected asset and inspection part.',
   Logs: 'Diagnostics, API request logs, and generation troubleshooting.',
   Settings: 'Viewer quality, provider defaults, screenshot size, and export preferences.',
   Compare: 'Side-by-side model comparison for shape, material, and generation quality.',

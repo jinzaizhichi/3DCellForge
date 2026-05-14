@@ -17,11 +17,13 @@ Open the demo video: [Demo MP4](docs/demo/3DCellForge-demo-2026-05-10.mp4)
 - Interactive model viewer built with React Three Fiber.
 - Three-column workbench: Model Library on the left, WebGL stage in the center, asset/generation tools on the right.
 - Drag to rotate, scroll to zoom, isolate structure parts, inspect model details, and export the current scene.
+- Object-aware inspector with inferred category, source, provider state, material focus, demo value, and tags for vehicles, aircraft, vessels, products, artifacts, and organic specimens.
 - Model quality score for generated GLBs, including file size, triangle count, texture count, and demo readiness.
 - Demo Mode for screenshots and screen recordings: hides side panels, uses object-aware cinematic camera paths, and shows a clean presentation overlay.
-- Older Uploads stays collapsed by default, while the latest uploaded model stays pinned and clickable.
+- Productized Model Library drawer with source thumbnails, provider/status, task id, GLB URL actions, comparison, and delete controls.
+- Saved Assets stays collapsed by default, while the active generated/imported asset stays pinned and clickable.
 - Generated/imported models are restored after refresh through IndexedDB, with localStorage as a compact fallback.
-- Part detail drawer, asset references, comparison panel, notes, gallery actions, logs, saved projects, and a compact generation queue.
+- Generic part detail drawer, asset references, comparison panel, notes, gallery actions, logs, saved projects, and a compact generation queue.
 - Hyper3D, Tripo, Fal.ai, Hunyuan3D, JS Depth, and Local GLB generation/import modes.
 - Cached demo GLB models for offline-friendly screenshots and demos.
 - Auxiliary Khronos glTF reference models for GLB loader and PBR material checks.
@@ -52,14 +54,15 @@ Open the Vite URL shown in the terminal.
 
 The default screen is intentionally quiet:
 
-- Pick your latest upload or saved generated models from the left `Model Library` rail.
-- Older uploaded/generated/imported models are tucked under `Older Uploads` until expanded.
+- Pick the active generated/imported asset from the left `Model Library` rail.
+- Earlier generated/imported models are tucked under `Saved Assets` until expanded.
 - Use the right `Asset Source` rail to choose the generation provider or import a local `.glb` / `.gltf`.
 - Watch upload/generation/import state in the left `Generation Queue` panel.
 - Click `Info` or `Inspect` only when you need the part detail drawer.
+- Open top-nav `Library` for the full asset catalog with previews, provider state, task ids, GLB URL copy, provider comparison, and deletion.
 - Click `Demo` in the top navigation to enter a clean presentation mode for screenshots and recordings.
 - Check the quality card on the stage before recording; low scores usually mean the source image or provider result is not demo-ready.
-- Demo animation adapts to the model name and metadata: cars use a road push-in, aircraft use a flight pass, ships/carriers use a naval cruise, and biological models use a specimen orbit.
+- Demo animation adapts to the model name and metadata: cars use a road push-in, aircraft use a flight pass, ships/carriers use a naval cruise, and organic/specimen assets use a studio orbit.
 
 Useful validation commands:
 
@@ -67,7 +70,10 @@ Useful validation commands:
 npm run lint
 npm run build
 npm run test
+npm run test:visual
 ```
+
+`npm run test:visual` runs Playwright layout and screenshot regression checks for the workbench, the Model Library drawer, and Demo Mode. Use `npm run test:visual:update` only when an intentional UI change needs new screenshot baselines.
 
 ## Optional Image-to-3D Backend
 

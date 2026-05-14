@@ -79,7 +79,7 @@ export function BottomDeck({
                 title="Open latest uploaded model"
               >
                 {uploadedImage?.url ? <Image size={16} /> : <Box size={16} />}
-                {latestUploadCell.name || uploadedImage?.name || 'Latest Upload'}
+                {latestUploadCell.name || uploadedImage?.name || 'Latest Asset'}
               </button>
               <button type="button" className="add-image upload-new" onClick={() => fileInputRef.current?.click()} title="Upload a new image or GLB">
                 <Upload size={16} />

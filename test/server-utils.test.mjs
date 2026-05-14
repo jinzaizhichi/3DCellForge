@@ -10,7 +10,7 @@ import { compactCustomCellsForStorage, persistCustomCells } from '../src/domain/
 describe('server utility functions', () => {
   it('sanitizes uploaded filenames without losing readable words', () => {
     assert.equal(sanitizeFileName('../plant cell ✨.png'), 'plant cell .png')
-    assert.equal(sanitizeFileName(''), 'cell-reference.png')
+    assert.equal(sanitizeFileName(''), 'asset-reference.png')
   })
 
   it('parses supported image data URLs and rejects tiny payloads', () => {

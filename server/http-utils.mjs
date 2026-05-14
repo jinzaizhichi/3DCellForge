@@ -103,7 +103,7 @@ export function parseDataUrl(dataUrl) {
 
 export function sanitizeFileName(fileName) {
   const baseName = String(fileName).split(/[\\/]/).pop() || ''
-  return baseName.replace(/[^\w.\- ]+/g, '').replace(/^\.+/, '').trim() || 'cell-reference.png'
+  return baseName.replace(/[^\w.\- ]+/g, '').replace(/^\.+/, '').trim() || 'asset-reference.png'
 }
 
 function normalizeAddress(address = '') {

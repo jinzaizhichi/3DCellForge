@@ -17,12 +17,14 @@ AI 驱动的交互式 3D 模型生成、检查和演示工作台。
 - 基于 React Three Fiber 的交互式模型查看器。
 - 三栏工作台：左侧 Model Library，中间 WebGL 主舞台，右侧素材和生成工具。
 - 支持拖拽旋转、滚轮缩放、结构隔离、部件 Inspect 和场景导出。
+- 对象级说明面板会根据资产名称和生成元数据推断类别、来源、Provider 状态、材质重点、演示价值和标签，覆盖车辆、飞机、船舰、产品、文物和有机标本。
 - 模型质量评分会展示 GLB 文件大小、三角面数、贴图数量和演示可用性。
 - Demo Mode 会隐藏左右工具区、根据物体类型使用不同运镜，并显示干净的演示信息层，适合截图和录屏。
-- Older Uploads 默认收起，最新上传模型会固定显示并可直接点击打开。
+- Model Library 抽屉升级为资产库视图，包含源图预览、Provider / 状态、任务 ID、GLB URL 操作、Provider 对比和删除入口。
+- Saved Assets 默认收起，当前激活的生成 / 导入资产会固定显示并可直接点击打开。
 - 生成 / 导入成功的模型会写入 IndexedDB，刷新页面后会自动恢复；localStorage 只做轻量兜底。
 - 自定义上传记录支持删除，并同步清理相关本地数据。
-- 部件详情抽屉、素材参考、对比面板、模型笔记、图库操作、日志、项目保存和生成队列。
+- 通用部件详情抽屉、素材参考、对比面板、模型笔记、图库操作、日志、项目保存和生成队列。
 - 支持 Hyper3D、Tripo、Fal.ai、Hunyuan3D、JS Depth 和 Local GLB 多种模式。
 - 生成后的 GLB 会缓存到本地，方便后续演示和截图。
 - 内置 Khronos glTF 辅助参考模型，用于检查 GLB 加载和 PBR 材质表现。
@@ -53,14 +55,15 @@ npm run dev
 
 默认页面会尽量减少干扰：
 
-- 左侧 `Model Library` 只展示你的最新上传和已保存生成模型。
-- 更早上传、生成、导入过的模型会收进 `Older Uploads`，默认折叠。
+- 左侧 `Model Library` 固定展示当前激活的生成 / 导入资产。
+- 更早生成、导入过的模型会收进 `Saved Assets`，默认折叠。
 - 右侧 `Asset Source` 用来选择生成模式或导入本地 `.glb` / `.gltf`。
 - 左侧 `Generation Queue` 可以查看上传、生成、导入状态，并对失败任务重试。
 - 需要部件说明时，再点击 `Info` 或 `Inspect` 打开详情抽屉。
+- 顶部打开 `Library` 可以查看完整资产库：预览、Provider 状态、任务 ID、GLB URL 复制、Provider 对比和删除。
 - 顶部点击 `Demo` 进入纯展示模式，适合截图、录屏、演示。
 - 录屏前先看主舞台的质量评分；分数低通常说明源图或生成结果还不适合演示。
-- Demo 动画会根据模型名称和元数据切换：汽车走低机位推进，飞机走飞行掠过，航母/船走侧向巡航，生物模型走标本环绕。
+- Demo 动画会根据模型名称和元数据切换：汽车走低机位推进，飞机走飞行掠过，航母 / 船走侧向巡航，有机 / 标本类资产走工作室环绕。
 
 常用验证命令：
 
@@ -68,7 +71,10 @@ npm run dev
 npm run lint
 npm run build
 npm run test
+npm run test:visual
 ```
+
+`npm run test:visual` 会运行 Playwright 布局和截图回归，覆盖工作台、Model Library 抽屉和 Demo Mode。只有确认 UI 改动是预期变化时，才运行 `npm run test:visual:update` 更新截图基线。
 
 ## 可选 Image-to-3D 后端
 

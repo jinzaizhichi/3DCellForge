@@ -1,10 +1,14 @@
 import { motion } from 'framer-motion'
-import { Copy, Download, Edit3, RefreshCw, Trash2, X } from 'lucide-react'
+import { Box, CheckCircle2, Clock3, Copy, Download, Edit3, Image, Layers3, RefreshCw, RotateCcw, Trash2, X } from 'lucide-react'
 
 import { FAL_MODEL_OPTIONS, GENERATION_MODE_OPTIONS, LANGUAGE_OPTIONS, SCREENSHOT_SCALE_OPTIONS } from '../config/appConfig.js'
-import { CELL_TYPES, KHRONOS_REFERENCE_CELLS, WORKSPACE_PANELS } from '../domain/cellData.js'
-import { getAvailableOrganelleIds, getCell, getCellProfile, getOrganelleDetail } from '../domain/cellCatalog.js'
+import { CELL_TYPES, WORKSPACE_PANELS } from '../domain/cellData.js'
+import { getCell, getCellProfile, getOrganelleDetail } from '../domain/cellCatalog.js'
+import { getProviderLabel } from '../services/modelApi.js'
 import { CellThumb } from './CellThumb.jsx'
+
+const READY_STATUSES = new Set(['success', 'local'])
+const ACTIVE_STATUSES = new Set(['uploading', 'processing', 'queued', 'running', 'pending'])
 
 function findCell(cells, cellId) {
   return cells.find((cell) => cell.id === cellId) ?? getCell(cellId)
@@ -39,6 +43,42 @@ function getQualityLabel(cell) {
   if (cell.generation?.status === 'failed') return 'Failed'
   if (cell.generation?.status) return cell.generation.status
   return 'Interactive'
+}
+
+function getAssetPreviewUrl(cell) {
+  return cell.thumbnailUrl || cell.imageUrl || ''
+}
+
+function formatAssetStatus(cell) {
+  const status = String(cell.generation?.status || '').toLowerCase()
+  if (cell.reference) return 'reference'
+  if (READY_STATUSES.has(status) || cell.generation?.modelUrl) return 'ready'
+  if (status === 'failed') return 'failed'
+  if (ACTIVE_STATUSES.has(status)) return 'generating'
+  if (cell.custom) return 'queued'
+  return 'starter'
+}
+
+function getAssetTone(cell) {
+  const status = formatAssetStatus(cell)
+  if (status === 'ready' || status === 'reference') return 'ready'
+  if (status === 'failed') return 'failed'
+  if (status === 'generating' || status === 'queued') return 'active'
+  return 'starter'
+}
+
+function getAssetKind(cell) {
+  if (cell.reference) return 'Reference GLB'
+  if (cell.generation?.provider === 'local') return 'Local Import'
+  if (cell.generation?.provider === 'cinematic') return 'JS Depth Preview'
+  if (cell.generation?.modelUrl) return 'Generated GLB'
+  if (cell.custom) return 'Generated Asset'
+  return 'Starter Scene'
+}
+
+function getAssetRuntime(cell, generationHistory) {
+  const match = generationHistory.find((entry) => entry.cellId === cell.id && Number.isFinite(entry.durationMs))
+  return match ? formatDuration(match.durationMs) : 'n/a'
 }
 
 function formatLogSummary(entry) {
@@ -83,6 +123,7 @@ export function WorkspaceDrawer({
   onDeleteGalleryItem,
   onDownloadGalleryImage,
   onExportGallery,
+  onDeleteCustomCell,
   onClearGenerationHistory,
   onUpdateNote,
   onGenerateNote,
@@ -106,7 +147,6 @@ export function WorkspaceDrawer({
   onExportProject,
   onRunProviderCompare,
   onCopyText,
-  onNotify,
 }) {
   if (!activePanel) return null
 
@@ -117,6 +157,62 @@ export function WorkspaceDrawer({
   const noteKey = `${selectedCell}:${selectedOrganelle}`
   const noteValue = notes[noteKey] ?? ''
   const savedFavorite = favoriteKey ? favoriteKey.replace(':', ' / ') : 'None'
+  const generatedAssets = allCells.filter((item) => item.custom && !item.reference)
+  const referenceAssets = allCells.filter((item) => item.reference)
+  const starterAssets = allCells.filter((item) => !item.custom && !item.reference)
+  const readyGeneratedAssets = generatedAssets.filter((item) => formatAssetStatus(item) === 'ready')
+
+  function renderAssetCard(item, { compact = false } = {}) {
+    const modelUrl = getModelUrl(item)
+    const previewUrl = getAssetPreviewUrl(item)
+    const providerLabel = getProviderLabel(item.generation?.provider || item.generation?.requestedProvider || (item.reference ? 'reference' : 'built-in'))
+    const canDelete = customCells.some((candidate) => candidate.id === item.id) && !item.reference
+    const canCompare = item.custom && !item.reference && Boolean(item.imageUrl)
+    const status = formatAssetStatus(item)
+    const taskId = item.generation?.taskId || ''
+
+    return (
+      <article key={item.id} className={`${selectedCell === item.id ? 'asset-library-card active' : 'asset-library-card'} tone-${getAssetTone(item)}${compact ? ' compact' : ''}`}>
+        <button type="button" className="asset-preview-frame" onClick={() => onSelectCell(item.id)} aria-label={`Open ${item.name}`}>
+          {previewUrl ? <img src={previewUrl} alt={`${item.name} source preview`} /> : <CellThumb cell={item} selected={selectedCell === item.id} />}
+        </button>
+        <div className="asset-library-body">
+          <div className="asset-library-title">
+            <span>
+              <strong title={item.fullName || item.name}>{item.fullName || item.name}</strong>
+              <small>{getAssetKind(item)} · {providerLabel}</small>
+            </span>
+            <span className={`asset-status-pill ${status}`}>
+              {status === 'ready' || status === 'reference' ? <CheckCircle2 size={12} /> : status === 'failed' ? <X size={12} /> : <Clock3 size={12} />}
+              {status}
+            </span>
+          </div>
+          <div className="asset-stat-grid">
+            <span><strong>{modelUrl ? 'GLB' : 'Preview'}</strong><small>asset</small></span>
+            <span><strong>{getAssetRuntime(item, generationHistory)}</strong><small>runtime</small></span>
+            <span><strong>{taskId ? String(taskId).slice(0, 8) : 'none'}</strong><small>task</small></span>
+          </div>
+          <code className="asset-model-url">{modelUrl || item.referenceSource || item.type || 'Procedural preview only'}</code>
+          <div className="asset-library-actions">
+            <button type="button" onClick={() => onSelectCell(item.id)}>Open</button>
+            <button type="button" disabled={!modelUrl} onClick={() => onCopyText(modelUrl, 'Model URL copied')}>
+              <Copy size={12} />
+              URL
+            </button>
+            <button type="button" disabled={!canCompare} onClick={() => onRunProviderCompare(item.id)}>
+              <RotateCcw size={12} />
+              Compare
+            </button>
+            {canDelete && (
+              <button type="button" className="danger" onClick={() => onDeleteCustomCell?.(item.id)}>
+                <Trash2 size={12} />
+              </button>
+            )}
+          </div>
+        </div>
+      </article>
+    )
+  }
 
   function renderContent() {
     if (activePanel === 'Gallery') {
@@ -194,76 +290,64 @@ export function WorkspaceDrawer({
 
     if (activePanel === 'Library') {
       return (
-        <div className="drawer-content">
-          <p className="drawer-copy">{profile.summary}</p>
-          <div className="reference-section">
-            <strong>Model Library</strong>
-            <span>Starter models, generated GLB assets, local imports, and reference models in one place.</span>
-            <div className="model-library-list">
-              {allCells.map((item) => {
-                const modelUrl = getModelUrl(item)
-                return (
-                  <article key={item.id} className={selectedCell === item.id ? 'model-library-card active' : 'model-library-card'}>
-                    <CellThumb cell={item} selected={selectedCell === item.id} />
-                    <div>
-                      <strong>{item.name}</strong>
-                      <small>{getModelSource(item)} · {getQualityLabel(item)}</small>
-                      <small>{modelUrl || item.referenceSource || item.type}</small>
-                    </div>
-                    <div className="model-library-actions">
-                      <button type="button" onClick={() => onSelectCell(item.id)}>Open</button>
-                      <button type="button" disabled={!modelUrl} onClick={() => onCopyText(modelUrl, 'Model URL copied')}>
-                        <Copy size={12} />
-                      </button>
-                    </div>
-                  </article>
-                )
-              })}
-            </div>
+        <div className="drawer-content asset-library-drawer">
+          <div className="asset-library-summary">
+            <span><strong>{generatedAssets.length}</strong><small>generated/imported</small></span>
+            <span><strong>{readyGeneratedAssets.length}</strong><small>ready GLB</small></span>
+            <span><strong>{referenceAssets.length}</strong><small>references</small></span>
           </div>
-          <div className="reference-section">
-            <strong>Khronos Reference Models</strong>
-            <span>Auxiliary GLB/PBR samples for material and loader checks.</span>
-            <div className="reference-grid">
-              {KHRONOS_REFERENCE_CELLS.map((reference) => (
-                <button
-                  key={reference.id}
-                  type="button"
-                  className={selectedCell === reference.id ? 'reference-card active' : 'reference-card'}
-                  onClick={() => {
-                    onSelectCell(reference.id)
-                    onNotify(`${reference.name} reference loaded`)
-                  }}
-                >
-                  <CellThumb cell={reference} selected={selectedCell === reference.id} />
+
+          <section className="asset-library-section">
+            <header className="asset-section-head">
+              <span>
+                <Box size={15} />
+                <strong>Generated & Imported Assets</strong>
+              </span>
+              <small>{readyGeneratedAssets.length}/{generatedAssets.length} ready</small>
+            </header>
+            {generatedAssets.length === 0 ? (
+              <div className="asset-library-empty">
+                <Image size={18} />
+                <span>No generated assets yet.</span>
+                <small>Upload an image or import a GLB from Asset Source.</small>
+              </div>
+            ) : (
+              <div className="asset-card-grid">
+                {generatedAssets.map((item) => renderAssetCard(item))}
+              </div>
+            )}
+          </section>
+
+          <section className="asset-library-section">
+            <header className="asset-section-head">
+              <span>
+                <Layers3 size={15} />
+                <strong>Khronos Reference GLB</strong>
+              </span>
+              <small>material checks</small>
+            </header>
+            <div className="asset-card-grid compact">
+              {referenceAssets.map((item) => renderAssetCard(item, { compact: true }))}
+            </div>
+          </section>
+
+          <details className="asset-library-section starter-assets">
+            <summary>
+              <span>Starter procedural scenes</span>
+              <small>{starterAssets.length}</small>
+            </summary>
+            <div className="starter-asset-grid">
+              {starterAssets.map((item) => (
+                <button key={item.id} type="button" className={selectedCell === item.id ? 'starter-asset active' : 'starter-asset'} onClick={() => onSelectCell(item.id)}>
+                  <CellThumb cell={item} selected={selectedCell === item.id} />
                   <span>
-                    <strong>{reference.name}</strong>
-                    <small>{reference.referenceLicense}</small>
+                    <strong>{item.name}</strong>
+                    <small>{item.type}</small>
                   </span>
                 </button>
               ))}
             </div>
-          </div>
-          <div className="library-grid">
-            {getAvailableOrganelleIds(selectedCell, customCells).map((id) => {
-              const item = getOrganelleDetail(selectedCell, id, customCells)
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  className={selectedOrganelle === id ? 'library-card active' : 'library-card'}
-                  onClick={() => {
-                    onSelectOrganelle(id)
-                    onNotify(`${item.title} selected`)
-                  }}
-                >
-                  <span style={{ background: item.accent }} />
-                  <strong>{item.title}</strong>
-                  <small>{item.subtitle}</small>
-                </button>
-              )
-            })}
-          </div>
+          </details>
         </div>
       )
     }
@@ -642,7 +726,7 @@ export function WorkspaceDrawer({
   }
 
   return (
-    <motion.section className="workspace-drawer" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
+    <motion.section className={`workspace-drawer drawer-${String(activePanel).toLowerCase()}`} initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }}>
       <header>
         <div>
           <strong>{activePanel}</strong>
@@ -655,7 +739,7 @@ export function WorkspaceDrawer({
       <div className="drawer-meta">
         <span>{cell.name}</span>
         <span>{detail.title}</span>
-        <span>Cross-section ready</span>
+        <span>Viewer ready</span>
       </div>
       {renderContent()}
     </motion.section>
